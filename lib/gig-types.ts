@@ -17,6 +17,7 @@ export type Profile = {
   is_onboarded: boolean;
   google_authenticated: boolean;
   phone_number: string;
+  phone_verified: boolean;
   birth_date: string;
   education_level: string | null;
   accepted_terms_at: string | null;

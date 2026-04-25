@@ -28,10 +28,14 @@ export function PrimaryButton({
   style,
 }: PrimaryButtonProps) {
   const { isDark } = useGigStore();
-  const ghostTextClass = tone === 'ghost' && !isDark ? 'text-zinc-950' : 'text-white';
-  const iconColor = tone === 'ghost' && !isDark ? '#18181B' : '#FFFFFF';
+  const ghostTextClass = disabled ? (isDark ? 'text-zinc-300' : 'text-zinc-600') : tone === 'ghost' && !isDark ? 'text-zinc-950' : 'text-white';
+  const iconColor = disabled ? (isDark ? '#D4D4D8' : '#52525B') : tone === 'ghost' && !isDark ? '#18181B' : '#FFFFFF';
   const buttonClass =
-    tone === 'ghost'
+    disabled
+      ? isDark
+        ? 'border border-white/10 bg-zinc-800'
+        : 'border border-zinc-300 bg-zinc-300'
+      : tone === 'ghost'
       ? isDark
         ? `${toneClasses.ghost} border-white/20 bg-white/10`
         : `${toneClasses.ghost} border-zinc-200 bg-white`
@@ -40,11 +44,12 @@ export function PrimaryButton({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       className={`min-h-12 flex-row items-center justify-center gap-2 rounded-3xl px-5 ${
         buttonClass
-      } ${disabled ? 'opacity-40' : 'opacity-100'}`}
+      }`}
       style={style}>
       {icon && <Ionicons name={icon} size={18} color={iconColor} />}
       <Text className={`text-center text-sm font-bold ${ghostTextClass}`}>{label}</Text>

@@ -13,11 +13,14 @@ type CategorySelectorProps = {
   showSearch?: boolean;
 };
 
+const popularCategoryNames = new Set(POPULAR_CATEGORIES.map((category) => category.toLowerCase()));
+
 export function CategorySelector({ selected, onChange, minSelected = 0, showSearch = true }: CategorySelectorProps) {
   const { isDark } = useGigStore();
   const [customCategory, setCustomCategory] = useState('');
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+  const customSelected = selected.filter((category) => !popularCategoryNames.has(category.toLowerCase()));
 
   function toggleCategory(category: string) {
     if (selected.includes(category)) {
@@ -35,8 +38,10 @@ export function CategorySelector({ selected, onChange, minSelected = 0, showSear
       return;
     }
 
-    const exists = selected.some((item) => item.toLowerCase() === trimmed.toLowerCase());
-    onChange(exists ? selected : [...selected, trimmed]);
+    const popularMatch = POPULAR_CATEGORIES.find((category) => category.toLowerCase() === trimmed.toLowerCase());
+    const nextCategory = popularMatch ?? trimmed;
+    const exists = selected.some((item) => item.toLowerCase() === nextCategory.toLowerCase());
+    onChange(exists ? selected : [...selected, nextCategory]);
     setCustomCategory('');
   }
 
@@ -71,6 +76,20 @@ export function CategorySelector({ selected, onChange, minSelected = 0, showSear
           );
         })}
       </View>
+      {customSelected.length > 0 && (
+        <View className="mb-3 flex-row flex-wrap gap-2">
+          {customSelected.map((category) => (
+            <Pressable
+              key={category}
+              accessibilityRole="button"
+              onPress={() => toggleCategory(category)}
+              className="min-h-10 flex-row items-center gap-1 rounded-full border border-orange-400/40 bg-orange-500/15 px-3">
+              <Text className="text-sm font-bold text-orange-400">{category}</Text>
+              <Ionicons name="close-circle" size={15} color="#F97316" />
+            </Pressable>
+          ))}
+        </View>
+      )}
       {showSearch && (
         <View className="flex-row gap-2">
           <TextInput
@@ -92,11 +111,7 @@ export function CategorySelector({ selected, onChange, minSelected = 0, showSear
           />
         </View>
       )}
-      {selected.length > 0 && (
-        <Text className={`mt-3 text-xs font-semibold ${titleClass}`} numberOfLines={2}>
-          {selected.join(', ')}
-        </Text>
-      )}
+      {selected.length > 0 && <Text className={`mt-3 text-xs font-semibold ${titleClass}`}>{selected.length} selected</Text>}
     </View>
   );
 }

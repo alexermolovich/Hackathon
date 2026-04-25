@@ -40,6 +40,12 @@
         }
       ],
       [
+        "expo-web-browser",
+        {
+          "experimentalLauncherActivity": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",

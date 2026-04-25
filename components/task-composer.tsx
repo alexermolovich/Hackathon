@@ -18,14 +18,12 @@ type TaskComposerProps = {
 
 export function TaskComposer({ onCreated }: TaskComposerProps) {
   const { profile, createTask, isDark } = useGigStore();
-  const [title, setTitle] = useState('Move two shelves across town');
-  const [description, setDescription] = useState(
-    'Need one reliable helper for a short apartment move. Elevator access on both sides.',
-  );
-  const [budget, setBudget] = useState('68');
-  const [category, setCategory] = useState('Moving');
-  const [locationLabel, setLocationLabel] = useState('Rapid City general area');
-  const [dateWindow, setDateWindow] = useState('Apr 26 - Apr 27, flexible');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [budget, setBudget] = useState('');
+  const [category, setCategory] = useState('');
+  const [locationLabel, setLocationLabel] = useState('');
+  const [dateWindow, setDateWindow] = useState('');
   const [isBoosted, setIsBoosted] = useState(false);
   const [boostDays, setBoostDays] = useState(3);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
@@ -42,6 +40,16 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
+  const parsedBudget = Number(budget);
+  const canPublish = Boolean(
+    title.trim() &&
+      description.trim() &&
+      category &&
+      locationLabel.trim() &&
+      Number.isFinite(parsedBudget) &&
+      parsedBudget >= 5 &&
+      imageUrls.length > 0,
+  );
 
   async function pickImages() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -66,15 +74,8 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
   }
 
   async function submitTask() {
-    const parsedBudget = Number(budget);
-
-    if (!title.trim() || !description.trim() || !Number.isFinite(parsedBudget) || parsedBudget < 5) {
-      Alert.alert('Missing details', 'Add a title, description, and realistic budget.');
-      return;
-    }
-
-    if (imageUrls.length === 0) {
-      Alert.alert('Image required', 'Add at least one image before posting the gig.');
+    if (!canPublish) {
+      Alert.alert('Missing details', 'Add a title, description, category, location, image, and realistic budget.');
       return;
     }
 
@@ -83,7 +84,7 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
       description: description.trim(),
       budget: parsedBudget,
       category,
-      location_label: locationLabel.trim() || 'Rapid City general area',
+      location_label: locationLabel.trim(),
       date_window: dateWindow.trim(),
       is_boosted: isBoosted,
       boost_days: isBoosted ? boostDays : 0,
@@ -255,7 +256,7 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
           </View>
         </View>
 
-        <PrimaryButton label="Publish Gig" icon="rocket" onPress={() => void submitTask()} />
+        <PrimaryButton label="Publish Gig" icon="rocket" onPress={() => void submitTask()} disabled={!canPublish} />
       </ScrollView>
 
       <BstPurchaseSheet
