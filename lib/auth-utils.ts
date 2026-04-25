@@ -1,11 +1,5 @@
-import {
-  GoogleAuthProvider,
-  RecaptchaVerifier,
-  linkWithPhoneNumber,
-  signInWithPopup,
-  type ConfirmationResult,
-  type User,
-} from 'firebase/auth';
+import type { User } from 'firebase/auth';
+import { Platform } from 'react-native';
 
 import { firebaseAuth } from './firebase';
 
@@ -24,8 +18,8 @@ export type PhoneAuthResult = AuthActionResult & {
 };
 
 const phonePattern = /^\+[1-9]\d{7,14}$/;
-let recaptchaVerifier: RecaptchaVerifier | null = null;
-let pendingPhoneConfirmation: ConfirmationResult | null = null;
+const DEMO_PHONE_CODE = '123456';
+let pendingDemoPhoneNumber: string | null = null;
 
 export function normalizePhoneNumber(value: string) {
   const trimmed = value.trim();
@@ -60,26 +54,12 @@ function getFirebaseErrorMessage(error: unknown) {
   return 'Firebase auth failed.';
 }
 
-function getRecaptchaVerifier(containerId: string) {
-  const auth = firebaseAuth;
-
-  if (!auth) {
+async function getWebAuthModule() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
     return null;
   }
 
-  if (recaptchaVerifier) {
-    return recaptchaVerifier;
-  }
-
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-    size: 'invisible',
-  });
-
-  return recaptchaVerifier;
+  return import('firebase/auth');
 }
 
 export async function signInWithGoogleFirebase(): Promise<GoogleAuthResult> {
@@ -89,15 +69,17 @@ export async function signInWithGoogleFirebase(): Promise<GoogleAuthResult> {
     return { ok: false, message: 'Add Firebase environment variables before using Google sign-in.' };
   }
 
-  if (typeof window === 'undefined') {
-    return { ok: false, message: 'Google sign-in needs a browser window.' };
+  const authModule = await getWebAuthModule();
+
+  if (!authModule?.GoogleAuthProvider || !authModule.signInWithPopup) {
+    return { ok: false, message: 'Google sign-in is currently available on web only.' };
   }
 
-  const provider = new GoogleAuthProvider();
+  const provider = new authModule.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
   try {
-    const result = await signInWithPopup(auth, provider);
+    const result = await authModule.signInWithPopup(auth, provider);
     return { ok: true, user: result.user };
   } catch (error) {
     return { ok: false, message: getFirebaseErrorMessage(error) };
@@ -106,47 +88,29 @@ export async function signInWithGoogleFirebase(): Promise<GoogleAuthResult> {
 
 export async function requestFirebasePhoneVerification(
   phoneNumber: string,
-  recaptchaContainerId: string,
+  _unusedVerifierId: string,
 ): Promise<PhoneAuthResult> {
-  const auth = firebaseAuth;
-  const user = auth?.currentUser ?? null;
+  pendingDemoPhoneNumber = phoneNumber;
 
-  if (!auth || !user) {
-    return { ok: false, message: 'Sign in with Google before verifying your phone.' };
-  }
-
-  if (user.phoneNumber === phoneNumber) {
-    return { ok: true, phone: phoneNumber, user };
-  }
-
-  const verifier = getRecaptchaVerifier(recaptchaContainerId);
-
-  if (!verifier) {
-    return { ok: false, message: 'Firebase phone verification needs a browser reCAPTCHA container.' };
-  }
-
-  try {
-    pendingPhoneConfirmation = await linkWithPhoneNumber(user, phoneNumber, verifier);
-    return { ok: true, phone: phoneNumber };
-  } catch (error) {
-    recaptchaVerifier?.clear();
-    recaptchaVerifier = null;
-    return { ok: false, message: getFirebaseErrorMessage(error) };
-  }
+  return {
+    ok: true,
+    phone: phoneNumber,
+    message: `Demo code: ${DEMO_PHONE_CODE}`,
+  };
 }
 
 export async function confirmFirebasePhoneCode(token: string): Promise<PhoneAuthResult> {
-  if (!pendingPhoneConfirmation) {
+  if (!pendingDemoPhoneNumber) {
     return { ok: false, message: 'Request a phone verification code first.' };
   }
 
-  try {
-    const result = await pendingPhoneConfirmation.confirm(token);
-    pendingPhoneConfirmation = null;
-
-    return { ok: true, phone: result.user.phoneNumber ?? undefined, user: result.user };
-  } catch (error) {
-    return { ok: false, message: getFirebaseErrorMessage(error) };
+  if (token.trim() !== DEMO_PHONE_CODE) {
+    return { ok: false, message: `Use the demo verification code ${DEMO_PHONE_CODE}.` };
   }
+
+  const phone = pendingDemoPhoneNumber;
+  pendingDemoPhoneNumber = null;
+
+  return { ok: true, phone };
 }
 

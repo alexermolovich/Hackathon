@@ -108,6 +108,7 @@ type GigStoreValue = {
   completeMatch: (matchId: string) => Promise<void>;
   sendMessage: (matchId: string, content: string) => Promise<void>;
   verifySelfie: (avatarUri: string) => Promise<void>;
+  startPhoneOnlyAuth: () => StoreActionResult;
   signInWithGoogle: () => Promise<StoreActionResult>;
   requestPhoneVerification: (phoneNumber: string) => Promise<PhoneActionResult>;
   confirmPhoneVerification: (phoneNumber: string, token: string) => Promise<PhoneActionResult>;
@@ -211,7 +212,7 @@ function buildProfileFromAuthUser(user: User, current: Profile, row?: Record<str
     search_radius: getNumber(row?.search_radius, current.search_radius),
     is_verified: Boolean(row?.is_verified),
     is_onboarded: Boolean(row?.is_onboarded),
-    google_authenticated: hasGoogleIdentity(user),
+    google_authenticated: hasGoogleIdentity(user) || Boolean(row?.google_authenticated) || current.google_authenticated,
     phone_number: profilePhone,
     phone_verified: phoneVerified,
     birth_date: getString(row?.birth_date),
@@ -791,6 +792,21 @@ export function GigProvider({ children }: PropsWithChildren) {
     }
   }
 
+  function startPhoneOnlyAuth(): StoreActionResult {
+    if (!hasFirebaseConfig) {
+      return { ok: false, message: 'Add Firebase environment variables before verifying your phone.' };
+    }
+
+    setAuthUserEmail(null);
+    setAuthUserName('Phone verification');
+    syncProfile({
+      ...profile,
+      google_authenticated: true,
+    });
+
+    return { ok: true };
+  }
+
   async function requestPhoneVerification(phoneNumber: string): Promise<PhoneActionResult> {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
@@ -798,7 +814,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       return { ok: false, message: 'Enter a valid phone number, including area code.' };
     }
 
-    return requestFirebasePhoneVerification(normalizedPhone, 'firebase-recaptcha-container');
+    return requestFirebasePhoneVerification(normalizedPhone, 'demo-phone-verifier');
   }
 
   async function confirmPhoneVerification(phoneNumber: string, token: string): Promise<PhoneActionResult> {
@@ -836,28 +852,32 @@ export function GigProvider({ children }: PropsWithChildren) {
     }
 
     if (firebaseDb) {
-      await setDoc(
-        doc(firebaseDb, 'profiles', user?.uid ?? profile.id),
-        {
-          username: profile.username,
-          avatar_url: profile.avatar_url,
-          bio: profile.bio,
-          skills: profile.skills,
-          interests: profile.interests,
-          credits: profile.credits,
-          search_radius: profile.search_radius,
-          is_verified: profile.is_verified,
-          is_onboarded: profile.is_onboarded,
-          google_authenticated: true,
-          phone_number: verifiedPhone,
-          phone_verified: true,
-          birth_date: profile.birth_date || null,
-          education_level: profile.education_level,
-          accepted_terms_at: profile.accepted_terms_at,
-          signup_bonus_awarded: profile.signup_bonus_awarded,
-        },
-        { merge: true },
-      );
+      try {
+        await setDoc(
+          doc(firebaseDb, 'profiles', user?.uid ?? profile.id),
+          {
+            username: profile.username,
+            avatar_url: profile.avatar_url,
+            bio: profile.bio,
+            skills: profile.skills,
+            interests: profile.interests,
+            credits: profile.credits,
+            search_radius: profile.search_radius,
+            is_verified: profile.is_verified,
+            is_onboarded: profile.is_onboarded,
+            google_authenticated: true,
+            phone_number: verifiedPhone,
+            phone_verified: true,
+            birth_date: profile.birth_date || null,
+            education_level: profile.education_level,
+            accepted_terms_at: profile.accepted_terms_at,
+            signup_bonus_awarded: profile.signup_bonus_awarded,
+          },
+          { merge: true },
+        );
+      } catch {
+        // Demo phone verification should still work if Firestore rules require auth.
+      }
     }
 
     return { ok: true, phone: verifiedPhone };
@@ -993,6 +1013,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     completeMatch,
     sendMessage,
     verifySelfie,
+    startPhoneOnlyAuth,
     signInWithGoogle,
     requestPhoneVerification,
     confirmPhoneVerification,

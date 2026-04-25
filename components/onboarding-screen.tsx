@@ -80,6 +80,7 @@ export function OnboardingScreen() {
     authLoading,
     authUserEmail,
     authUserName,
+    startPhoneOnlyAuth,
     signInWithGoogle,
     requestPhoneVerification,
     confirmPhoneVerification,
@@ -176,6 +177,17 @@ export function OnboardingScreen() {
     }
   }
 
+  function handlePhoneOnly() {
+    const result = startPhoneOnlyAuth();
+
+    if (!result.ok) {
+      Alert.alert('Phone verification unavailable', result.message ?? 'Check your Firebase setup.');
+      return;
+    }
+
+    setStep('phone');
+  }
+
   async function sendOtp() {
     setBusy(true);
 
@@ -193,7 +205,7 @@ export function OnboardingScreen() {
 
       setOtp('');
       setOtpSent(true);
-      Alert.alert('Code sent', 'Enter the 6-digit code from the text message.');
+      Alert.alert('Demo code ready', result.message ?? 'Use 123456 to verify this phone number.');
     } finally {
       setBusy(false);
     }
@@ -290,6 +302,13 @@ export function OnboardingScreen() {
                     onPress={() => void handleGoogle()}
                     disabled={busy}
                   />
+                  <PrimaryButton
+                    label="Skip Google, verify phone"
+                    icon="call"
+                    tone="ghost"
+                    onPress={handlePhoneOnly}
+                    disabled={busy}
+                  />
                 </View>
               </StepPanel>
             )}
@@ -297,7 +316,7 @@ export function OnboardingScreen() {
             {step === 'phone' && (
               <StepPanel panelClass={panelClass}>
                 <View className="mb-5">
-                  <StatusPill icon="checkmark-circle" label={authUserName ?? authUserEmail ?? 'Google connected'} />
+                  <StatusPill icon="checkmark-circle" label={authUserName ?? authUserEmail ?? 'Phone-first signup'} />
                   <Text className={`mt-4 text-3xl font-black ${titleClass}`}>Verify phone</Text>
                 </View>
                 <Field label="Phone number" labelClass={mutedClass}>
@@ -313,7 +332,6 @@ export function OnboardingScreen() {
                     className={`${inputClass} font-semibold`}
                   />
                 </Field>
-                <View nativeID="firebase-recaptcha-container" className="h-1" />
                 {otpSent && (
                   <Field label="Verification code" labelClass={mutedClass}>
                     <TextInput
