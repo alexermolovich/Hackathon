@@ -26,6 +26,7 @@ export type Task = {
   category: string;
   location: Coordinates;
   required_skills: string[];
+  image_urls: string[];
   is_boosted: boolean;
   created_at: string;
 };

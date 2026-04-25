@@ -6,7 +6,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { useGigStore } from '@/lib/gig-store';
 
 export function SelfieCheckGate() {
-  const { profile, verifySelfie } = useGigStore();
+  const { profile, verifySelfie, isDark } = useGigStore();
 
   if (profile.is_verified) {
     return null;
@@ -35,13 +35,13 @@ export function SelfieCheckGate() {
   }
 
   return (
-    <View className="absolute inset-0 z-50 justify-end bg-black/90">
-      <View className="rounded-t-[36px] border border-white/10 bg-zinc-950 p-6">
+    <View className="absolute inset-0 z-50 justify-end bg-black/80">
+      <View className={`rounded-t-[36px] border p-6 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
         <View className="mb-5 h-20 w-20 items-center justify-center rounded-full bg-violet">
           <Ionicons name="shield-checkmark" size={36} color="#FFFFFF" />
         </View>
-        <Text className="mb-2 text-4xl font-black text-white">Verify your Identity</Text>
-        <Text className="mb-6 text-base leading-6 text-zinc-300">
+        <Text className={`mb-2 text-4xl font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>Verify your Identity</Text>
+        <Text className={`mb-6 text-base leading-6 ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>
           Complete a mocked selfie check to activate your verified badge and start matching.
         </Text>
         <PrimaryButton label="Upload Selfie" icon="camera" onPress={() => void runSelfieCheck()} />

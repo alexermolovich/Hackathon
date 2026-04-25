@@ -33,6 +33,7 @@ create table if not exists public.tasks (
   category text not null,
   location geography(point, 4326) not null,
   required_skills text[] not null default '{}',
+  image_urls text[] not null default '{}',
   is_boosted boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -108,6 +109,7 @@ returns table (
   latitude double precision,
   longitude double precision,
   required_skills text[],
+  image_urls text[],
   is_boosted boolean,
   created_at timestamptz,
   distance_miles double precision,
@@ -153,6 +155,7 @@ as $$
     st_y(location::geometry) as latitude,
     st_x(location::geometry) as longitude,
     required_skills,
+    image_urls,
     is_boosted,
     created_at,
     distance_miles,
@@ -188,11 +191,33 @@ begin
   where id = match_uuid
     and doer_id = doer_uuid
     and status = 'matched'
+    and is_unlocked = false
   returning * into updated_match;
 
   if updated_match.id is null then
     raise exception 'match_not_unlockable';
   end if;
+
+  with task_location_message as (
+    select
+      t.poster_id,
+      'Task location: https://www.google.com/maps/search/?api=1&query=' ||
+        round(st_y(t.location::geometry)::numeric, 6)::text ||
+        ',' ||
+        round(st_x(t.location::geometry)::numeric, 6)::text as content
+    from public.tasks t
+    where t.id = updated_match.task_id
+  )
+  insert into public.messages (match_id, sender_id, content)
+  select updated_match.id, poster_id, content
+  from task_location_message
+  where not exists (
+    select 1
+    from public.messages existing
+    where existing.match_id = updated_match.id
+      and existing.sender_id = task_location_message.poster_id
+      and existing.content = task_location_message.content
+  );
 
   return updated_match;
 end;

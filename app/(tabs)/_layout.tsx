@@ -1,14 +1,16 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { useGigStore } from '@/lib/gig-store';
 
 export default function TabLayout() {
+  const { isDark } = useGigStore();
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#FFFFFF',
+        tabBarActiveTintColor: isDark ? '#FFFFFF' : '#18181B',
         tabBarInactiveTintColor: '#71717A',
         headerShown: false,
         tabBarButton: HapticTab,
@@ -17,8 +19,8 @@ export default function TabLayout() {
           paddingTop: 8,
           paddingBottom: 20,
           borderTopWidth: 1,
-          borderTopColor: '#18181B',
-          backgroundColor: '#050505',
+          borderTopColor: isDark ? '#18181B' : '#E4E4E7',
+          backgroundColor: isDark ? '#050505' : '#FFFFFF',
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -46,19 +48,13 @@ export default function TabLayout() {
       <Tabs.Screen
         name="create"
         options={{
-          title: 'Post',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={25} color={color} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'shield-checkmark' : 'shield-checkmark-outline'} size={24} color={color} />
-          ),
+          href: null,
         }}
       />
     </Tabs>

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -11,9 +11,11 @@ import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
 
+const GOOGLE_MAPS_URL_PATTERN = /(https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=[^\s]+)/;
+
 export default function ChatScreen() {
   const { matchId } = useLocalSearchParams<{ matchId: string }>();
-  const { profile, matches, messages, unlockChat, sendMessage } = useGigStore();
+  const { profile, matches, messages, unlockChat, sendMessage, isDark } = useGigStore();
   const [draft, setDraft] = useState('');
 
   const match = matches.find((item) => item.id === matchId);
@@ -22,10 +24,15 @@ export default function ChatScreen() {
     [matchId, messages],
   );
 
+  const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
+  const titleClass = isDark ? 'text-white' : 'text-zinc-950';
+  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+  const panelClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white';
+
   if (!match) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center bg-black px-6">
-        <Text className="mb-5 text-center text-3xl font-black text-white">Match not found</Text>
+      <SafeAreaView className={`flex-1 items-center justify-center px-6 ${shellClass}`}>
+        <Text className={`mb-5 text-center text-3xl font-black ${titleClass}`}>Match not found</Text>
         <PrimaryButton label="Back" icon="arrow-back" tone="ghost" onPress={() => router.back()} />
       </SafeAreaView>
     );
@@ -49,23 +56,23 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
+    <SafeAreaView className={`flex-1 ${shellClass}`}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-        <View className="border-b border-white/10 px-5 py-3">
+        <View className={`border-b px-5 py-3 ${isDark ? 'border-white/10' : 'border-zinc-200'}`}>
           <View className="flex-row items-center gap-3">
             <Pressable
               accessibilityRole="button"
               onPress={() => router.back()}
-              className="h-11 w-11 items-center justify-center rounded-full bg-white/10">
-              <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+              className={`h-11 w-11 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-white'}`}>
+              <Ionicons name="arrow-back" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
             </Pressable>
             <Avatar profile={participant} size={48} />
             <View className="flex-1">
               <View className="flex-row items-center gap-2">
-                <Text className="text-lg font-black text-white">{participant.username}</Text>
+                <Text className={`text-lg font-black ${titleClass}`}>{participant.username}</Text>
                 <VerifiedBadge verified={participant.is_verified} compact />
               </View>
-              <Text className="text-sm text-zinc-400" numberOfLines={1}>
+              <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>
                 {activeMatch.task.title}
               </Text>
             </View>
@@ -75,35 +82,31 @@ export default function ChatScreen() {
 
         <View className="flex-1">
           <ScrollView className="flex-1" contentContainerClassName="gap-3 px-5 py-5">
-            <View className="mb-2 rounded-[26px] border border-white/10 bg-white/10 p-4">
+            <View className={`mb-2 rounded-[26px] border p-4 ${panelClass}`}>
               <Text className="text-xs font-bold text-violet-200">Your bid</Text>
-              <Text className="mt-1 text-base leading-6 text-white">{activeMatch.bid_note}</Text>
+              <Text className={`mt-1 text-base leading-6 ${titleClass}`}>{activeMatch.bid_note}</Text>
             </View>
 
-            {threadMessages.map((message) => {
-              const mine = message.sender_id === profile.id;
-
-              return (
-                <View
-                  key={message.id}
-                  className={`max-w-[82%] rounded-[24px] px-4 py-3 ${
-                    mine ? 'self-end bg-violet' : 'self-start border border-white/10 bg-white/10'
-                  }`}>
-                  <Text className="text-base leading-6 text-white">{message.content}</Text>
-                </View>
-              );
-            })}
+            {threadMessages.map((message) => (
+              <MessageBubble
+                key={message.id}
+                content={message.content}
+                mine={message.sender_id === profile.id}
+                isDark={isDark}
+                panelClass={panelClass}
+              />
+            ))}
           </ScrollView>
 
           {locked && (
             <View className="absolute inset-0 items-center justify-center px-6">
               <BlurView intensity={34} tint="dark" className="absolute inset-0" />
-              <View className="w-full rounded-[32px] border border-violet/40 bg-black/80 p-6">
+              <View className={`w-full rounded-[32px] border border-violet/40 p-6 ${isDark ? 'bg-black/80' : 'bg-white/95'}`}>
                 <View className="mb-4 h-16 w-16 items-center justify-center rounded-full bg-violet">
                   <Ionicons name="lock-closed" size={30} color="#FFFFFF" />
                 </View>
-                <Text className="mb-2 text-3xl font-black text-white">Chat locked</Text>
-                <Text className="mb-6 text-base leading-6 text-zinc-300">
+                <Text className={`mb-2 text-3xl font-black ${titleClass}`}>Chat locked</Text>
+                <Text className={`mb-6 text-base leading-6 ${mutedClass}`}>
                   Spend 5 credits to reveal the thread and finalize the gig with {participant.username}.
                 </Text>
                 <PrimaryButton label="Unlock Chat (5 Credits)" icon="flash" onPress={() => void handleUnlock()} />
@@ -112,7 +115,7 @@ export default function ChatScreen() {
           )}
         </View>
 
-        <View className="border-t border-white/10 p-4">
+        <View className={`border-t p-4 ${isDark ? 'border-white/10' : 'border-zinc-200'}`}>
           <View className="flex-row items-center gap-3">
             <TextInput
               editable={!locked}
@@ -120,7 +123,9 @@ export default function ChatScreen() {
               onChangeText={setDraft}
               placeholder={locked ? 'Unlock chat to reply' : 'Message'}
               placeholderTextColor="#71717A"
-              className="min-h-12 flex-1 rounded-3xl border border-white/10 bg-white/10 px-4 text-base text-white"
+              className={`min-h-12 flex-1 rounded-3xl border px-4 text-base ${
+                isDark ? 'border-white/10 bg-white/10 text-white' : 'border-zinc-200 bg-white text-zinc-950'
+              }`}
             />
             <Pressable
               accessibilityRole="button"
@@ -135,5 +140,42 @@ export default function ChatScreen() {
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+function MessageBubble({
+  content,
+  mine,
+  isDark,
+  panelClass,
+}: {
+  content: string;
+  mine: boolean;
+  isDark: boolean;
+  panelClass: string;
+}) {
+  const mapsMatch = content.match(GOOGLE_MAPS_URL_PATTERN);
+  const textClass = mine || isDark ? 'text-white' : 'text-zinc-950';
+
+  return (
+    <View
+      className={`max-w-[82%] rounded-[24px] px-4 py-3 ${
+        mine ? 'self-end bg-violet' : `self-start border ${panelClass}`
+      }`}>
+      {mapsMatch ? (
+        <Text className={`text-base leading-6 ${textClass}`}>
+          {content.slice(0, mapsMatch.index)}
+          <Text
+            accessibilityRole="link"
+            className="font-black underline"
+            style={{ color: mine ? '#FFFFFF' : '#8B5CF6' }}
+            onPress={() => void Linking.openURL(mapsMatch[0])}>
+            Open Google Maps
+          </Text>
+        </Text>
+      ) : (
+        <Text className={`text-base leading-6 ${textClass}`}>{content}</Text>
+      )}
+    </View>
   );
 }

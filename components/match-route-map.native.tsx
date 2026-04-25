@@ -10,14 +10,12 @@ import {
 } from '@/lib/geo';
 import type { Coordinates } from '@/lib/gig-types';
 
-type DiscoveryMapProps = {
-  center: Coordinates;
-  radiusMiles: number;
+type MatchRouteMapProps = {
+  origin: Coordinates;
+  target: Coordinates;
 };
 
-export function DiscoveryMap({ radiusMiles }: DiscoveryMapProps) {
-  const radius = radiusMiles || DEFAULT_TASK_RADIUS_MILES;
-
+export function MatchRouteMap(_props: MatchRouteMapProps) {
   return (
     <View style={styles.mapFrame}>
       <MapView
@@ -40,7 +38,7 @@ export function DiscoveryMap({ radiusMiles }: DiscoveryMapProps) {
         pointerEvents="none">
         <Circle
           center={RAPID_CITY_CENTER}
-          radius={radius * 1609.34}
+          radius={DEFAULT_TASK_RADIUS_MILES * 1609.34}
           fillColor="rgba(139, 92, 246, 0.10)"
           strokeColor="rgba(139, 92, 246, 0.70)"
           strokeWidth={2}
@@ -57,7 +55,7 @@ export function DiscoveryMap({ radiusMiles }: DiscoveryMapProps) {
 
       <View style={styles.topPill} pointerEvents="none">
         <Ionicons name="map" size={13} color="#FFFFFF" />
-        <Text style={styles.topPillText}>Rapid City - Google Maps - {radius} mi</Text>
+        <Text style={styles.topPillText}>Rapid City match map</Text>
       </View>
     </View>
   );
@@ -65,10 +63,12 @@ export function DiscoveryMap({ radiusMiles }: DiscoveryMapProps) {
 
 const styles = StyleSheet.create({
   mapFrame: {
-    height: 250,
+    height: 260,
     overflow: 'hidden',
     position: 'relative',
     width: '100%',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.12)',
   },
   topPill: {
     position: 'absolute',

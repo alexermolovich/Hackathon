@@ -4,18 +4,17 @@ import { StyleSheet, Text, View } from 'react-native';
 import { RAPID_CITY_TASK_DOTS } from '@/lib/geo';
 import type { Coordinates } from '@/lib/gig-types';
 
-type DiscoveryMapProps = {
-  center: Coordinates;
-  radiusMiles: number;
+type MatchRouteMapProps = {
+  origin: Coordinates;
+  target: Coordinates;
 };
 
-export function DiscoveryMap({ radiusMiles }: DiscoveryMapProps) {
+export function MatchRouteMap(_props: MatchRouteMapProps) {
   return (
     <View style={styles.mapFrame}>
       <View style={[styles.road, { top: 44, left: -28, transform: [{ rotate: '-10deg' }] }]} />
       <View style={[styles.road, { top: 124, left: -28, transform: [{ rotate: '8deg' }] }]} />
       <View style={[styles.roadThin, { top: 82, left: -28, transform: [{ rotate: '-2deg' }] }]} />
-      <View style={styles.radiusRing} />
       {RAPID_CITY_TASK_DOTS.map((dot, index) => (
         <View
           key={dot.id}
@@ -30,11 +29,9 @@ export function DiscoveryMap({ radiusMiles }: DiscoveryMapProps) {
           <Text style={styles.randomDotText}>{index + 1}</Text>
         </View>
       ))}
-      <View style={styles.centerPuck}>
-        <Ionicons name="navigate" size={18} color="#FFFFFF" />
-      </View>
       <View style={styles.topPill}>
-        <Text style={styles.topPillText}>Rapid City - {radiusMiles} mi</Text>
+        <Ionicons name="map" size={13} color="#FFFFFF" />
+        <Text style={styles.topPillText}>Rapid City match map</Text>
       </View>
     </View>
   );
@@ -43,10 +40,12 @@ export function DiscoveryMap({ radiusMiles }: DiscoveryMapProps) {
 const styles = StyleSheet.create({
   mapFrame: {
     backgroundColor: '#DDE5DA',
-    height: 250,
+    height: 260,
     overflow: 'hidden',
     position: 'relative',
     width: '100%',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.12)',
   },
   road: {
     position: 'absolute',
@@ -65,37 +64,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     opacity: 0.82,
   },
-  radiusRing: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: 40,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    borderWidth: 2,
-    borderColor: '#8B5CF6',
-    backgroundColor: 'rgba(139, 92, 246, 0.12)',
-  },
-  centerPuck: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: 93,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#8B5CF6',
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-  },
   randomDot: {
     position: 'absolute',
-    width: 30,
-    height: 30,
-    marginLeft: -15,
-    marginTop: -15,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    marginLeft: -16,
+    marginTop: -16,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
@@ -110,6 +85,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
     borderRadius: 999,
     backgroundColor: 'rgba(0, 0, 0, 0.72)',
     paddingHorizontal: 12,

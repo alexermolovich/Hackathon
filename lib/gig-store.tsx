@@ -1,5 +1,6 @@
 import * as Location from 'expo-location';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useColorScheme } from 'react-native';
 import type { PropsWithChildren } from 'react';
 
 import {
@@ -20,6 +21,7 @@ type CreateTaskInput = {
   category: string;
   required_skills: string[];
   is_boosted: boolean;
+  image_urls: string[];
 };
 
 type GigStoreValue = {
@@ -30,9 +32,12 @@ type GigStoreValue = {
   matches: EnrichedMatch[];
   messages: Message[];
   isLiveMode: boolean;
+  isDark: boolean;
+  colorMode: 'light' | 'dark';
   celebratedMatchId: string | null;
   createTask: (input: CreateTaskInput) => Promise<void>;
   submitBid: (task: Task, bidNote: string) => Promise<GigMatch>;
+  submitMatchedBid: (task: Task, bidNote: string) => Promise<GigMatch>;
   likeBack: (matchId: string) => Promise<void>;
   unlockChat: (matchId: string) => Promise<boolean>;
   completeMatch: (matchId: string) => Promise<void>;
@@ -40,20 +45,57 @@ type GigStoreValue = {
   verifySelfie: (avatarUri: string) => Promise<void>;
   updateRadius: (radius: number) => void;
   updateLocation: (coords: Coordinates) => void;
+  toggleColorMode: () => void;
   clearCelebration: () => void;
 };
 
 const GigStoreContext = createContext<GigStoreValue | null>(null);
+const TASK_LOCATION_MESSAGE_PREFIX = 'Task location:';
+
+function buildTaskMapsUrl(task: Task) {
+  const { latitude, longitude } = task.location;
+  return `https://www.google.com/maps/search/?api=1&query=${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+}
+
+function buildTaskLocationMessage(task: Task) {
+  return `${TASK_LOCATION_MESSAGE_PREFIX} ${buildTaskMapsUrl(task)}`;
+}
+
+function dedupeLocationMessages(items: Message[]) {
+  const seenLocationMessages = new Set<string>();
+
+  return items.filter((message) => {
+    if (!message.content.startsWith(TASK_LOCATION_MESSAGE_PREFIX)) {
+      return true;
+    }
+
+    const key = `${message.match_id}:${message.sender_id}:${message.content}`;
+
+    if (seenLocationMessages.has(key)) {
+      return false;
+    }
+
+    seenLocationMessages.add(key);
+    return true;
+  });
+}
 
 export function GigProvider({ children }: PropsWithChildren) {
+  const systemScheme = useColorScheme();
   const [profile, setProfile] = useState<Profile>(seededCurrentUser);
   const [profiles, setProfiles] = useState<Profile[]>(seededProfiles);
   const [tasks, setTasks] = useState<Task[]>(seededTasks);
   const [matches, setMatches] = useState<GigMatch[]>(seededMatches);
   const [messages, setMessages] = useState<Message[]>(seededMessages);
   const [celebratedMatchId, setCelebratedMatchId] = useState<string | null>(null);
+  const [colorMode, setColorMode] = useState<'light' | 'dark'>(systemScheme === 'light' ? 'light' : 'dark');
+  const isDark = colorMode === 'dark';
 
   const requestCurrentLocation = useCallback(async () => {
+    if (!hasSupabaseConfig) {
+      return;
+    }
+
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
 
@@ -93,9 +135,11 @@ export function GigProvider({ children }: PropsWithChildren) {
   const mergeMessages = useCallback((existing: Message[], incoming: Message[]) => {
     const byId = new Map(existing.map((message) => [message.id, message]));
     incoming.forEach((message) => byId.set(message.id, message));
-    return Array.from(byId.values()).sort(
+    const sorted = Array.from(byId.values()).sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
+
+    return dedupeLocationMessages(sorted);
   }, []);
 
   const mapSupabaseTask = useCallback(
@@ -111,6 +155,7 @@ export function GigProvider({ children }: PropsWithChildren) {
         longitude: Number(row.longitude ?? profile.location.longitude),
       },
       required_skills: Array.isArray(row.required_skills) ? (row.required_skills as string[]) : [],
+      image_urls: Array.isArray(row.image_urls) ? (row.image_urls as string[]) : [],
       is_boosted: Boolean(row.is_boosted),
       created_at: String(row.created_at),
     }),
@@ -240,6 +285,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       category: input.category,
       location: profile.location,
       required_skills: input.required_skills,
+      image_urls: input.image_urls,
       is_boosted: input.is_boosted,
       created_at: new Date().toISOString(),
     };
@@ -256,6 +302,7 @@ export function GigProvider({ children }: PropsWithChildren) {
         category: task.category,
         location: `SRID=4326;POINT(${task.location.longitude} ${task.location.latitude})`,
         required_skills: task.required_skills,
+        image_urls: task.image_urls,
         is_boosted: task.is_boosted,
       });
     }
@@ -288,6 +335,34 @@ export function GigProvider({ children }: PropsWithChildren) {
     return match;
   }
 
+  async function submitMatchedBid(task: Task, bidNote: string) {
+    const match: GigMatch = {
+      id: createUuid(),
+      task_id: task.id,
+      doer_id: profile.id,
+      bid_note: bidNote.trim(),
+      is_unlocked: false,
+      status: 'matched',
+      created_at: new Date().toISOString(),
+    };
+
+    setMatches((current) => [match, ...current]);
+    setCelebratedMatchId(match.id);
+
+    if (supabase) {
+      await supabase.from('matches').insert({
+        id: match.id,
+        task_id: task.id,
+        doer_id: profile.id,
+        bid_note: match.bid_note,
+        is_unlocked: false,
+        status: 'matched',
+      });
+    }
+
+    return match;
+  }
+
   async function likeBack(matchId: string) {
     setMatches((current) =>
       current.map((match) => (match.id === matchId ? { ...match, status: 'matched' } : match)),
@@ -303,6 +378,28 @@ export function GigProvider({ children }: PropsWithChildren) {
     if (profile.credits < 5) {
       return false;
     }
+
+    const match = matches.find((item) => item.id === matchId);
+    const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
+    const locationMessageContent = task ? buildTaskLocationMessage(task) : null;
+    const hasLocationMessage = locationMessageContent
+      ? messages.some(
+          (message) =>
+            message.match_id === matchId &&
+            message.sender_id === task?.poster_id &&
+            message.content === locationMessageContent,
+        )
+      : false;
+    const locationMessage: Message | null =
+      task && locationMessageContent && !hasLocationMessage
+        ? {
+            id: createUuid(),
+            match_id: matchId,
+            sender_id: task.poster_id,
+            content: locationMessageContent,
+            created_at: new Date().toISOString(),
+          }
+        : null;
 
     if (supabase) {
       const { error } = await supabase.rpc('unlock_match_chat', {
@@ -322,6 +419,19 @@ export function GigProvider({ children }: PropsWithChildren) {
     setMatches((current) =>
       current.map((match) => (match.id === matchId ? { ...match, is_unlocked: true } : match)),
     );
+
+    if (locationMessage) {
+      setMessages((current) =>
+        current.some(
+          (message) =>
+            message.match_id === locationMessage.match_id &&
+            message.sender_id === locationMessage.sender_id &&
+            message.content === locationMessage.content,
+        )
+          ? current
+          : mergeMessages(current, [locationMessage]),
+      );
+    }
 
     return true;
   }
@@ -402,6 +512,10 @@ export function GigProvider({ children }: PropsWithChildren) {
     );
   }
 
+  function toggleColorMode() {
+    setColorMode((current) => (current === 'dark' ? 'light' : 'dark'));
+  }
+
   const value: GigStoreValue = {
     profile,
     profiles,
@@ -410,9 +524,12 @@ export function GigProvider({ children }: PropsWithChildren) {
     matches: enrichedMatches,
     messages,
     isLiveMode: hasSupabaseConfig,
+    isDark,
+    colorMode,
     celebratedMatchId,
     createTask,
     submitBid,
+    submitMatchedBid,
     likeBack,
     unlockChat,
     completeMatch,
@@ -420,6 +537,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     verifySelfie,
     updateRadius,
     updateLocation,
+    toggleColorMode,
     clearCelebration: () => setCelebratedMatchId(null),
   };
 

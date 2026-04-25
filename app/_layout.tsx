@@ -1,12 +1,11 @@
-import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import '../global.css';
 import 'react-native-reanimated';
 
-import { SelfieCheckGate } from '@/components/selfie-check-gate';
-import { GigProvider } from '@/lib/gig-store';
+import { GigProvider, useGigStore } from '@/lib/gig-store';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -24,19 +23,39 @@ const gigSwipeTheme = {
   },
 };
 
+const gigSwipeLightTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: '#F4F4F5',
+    border: '#E4E4E7',
+    card: '#FFFFFF',
+    primary: '#8B5CF6',
+    text: '#18181B',
+  },
+};
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#000000' }}>
       <GigProvider>
-        <ThemeProvider value={gigSwipeTheme}>
-          <Stack screenOptions={{ contentStyle: { backgroundColor: '#000000' }, headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="chat/[matchId]" />
-          </Stack>
-          <SelfieCheckGate />
-          <StatusBar style="light" />
-        </ThemeProvider>
+        <ThemedAppShell />
       </GigProvider>
     </GestureHandlerRootView>
+  );
+}
+
+function ThemedAppShell() {
+  const { isDark } = useGigStore();
+  const backgroundColor = isDark ? '#000000' : '#F4F4F5';
+
+  return (
+    <ThemeProvider value={isDark ? gigSwipeTheme : gigSwipeLightTheme}>
+      <Stack screenOptions={{ contentStyle: { backgroundColor }, headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="chat/[matchId]" />
+      </Stack>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+    </ThemeProvider>
   );
 }
