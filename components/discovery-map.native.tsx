@@ -50,7 +50,7 @@ export function DiscoveryMap({ radiusMiles }: DiscoveryMapProps) {
             key={dot.id}
             coordinate={dot.coordinate}
             pinColor={index === 0 ? '#10B981' : '#F59E0B'}
-            title={`Task ${index + 1}`}
+            title={`Gig ${index + 1}`}
           />
         ))}
       </MapView>

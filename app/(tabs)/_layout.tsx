@@ -9,6 +9,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      initialRouteName="index"
       screenOptions={{
         tabBarActiveTintColor: isDark ? '#FFFFFF' : '#18181B',
         tabBarInactiveTintColor: '#71717A',
@@ -28,18 +29,27 @@ export default function TabLayout() {
         },
       }}>
       <Tabs.Screen
+        name="forge"
+        options={{
+          title: 'Forge',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'hammer' : 'hammer-outline'} size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="index"
         options={{
-          title: 'Deck',
+          title: 'Swipe',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'albums' : 'albums-outline'} size={24} color={color} />
+            <Ionicons name={focused ? 'flame' : 'flame-outline'} size={24} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="matches"
         options={{
-          title: 'Matches',
+          title: 'Hustles',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={24} color={color} />
           ),

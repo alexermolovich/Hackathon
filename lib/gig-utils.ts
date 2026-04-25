@@ -35,10 +35,12 @@ export function skillMatchCount(userSkills: string[], requiredSkills: string[]) 
 }
 
 export function buildDeck(tasks: Task[], user: Profile) {
+  const interestedCategories = new Set(user.interests.map((category) => category.toLowerCase()));
   const nearby = tasks
+    .filter((task) => task.status === 'open')
     .filter((task) => task.poster_id !== user.id)
     .filter((task) => milesBetween(user.location, task.location) <= user.search_radius)
-    .filter((task) => skillMatchCount(user.skills, task.required_skills) > 0)
+    .filter((task) => interestedCategories.size === 0 || interestedCategories.has(task.category.toLowerCase()))
     .sort((a, b) => milesBetween(user.location, a.location) - milesBetween(user.location, b.location));
 
   const boosted = nearby.filter((task) => task.is_boosted).slice(0, 3);
@@ -71,4 +73,22 @@ export function initials(name: string) {
     .join('')
     .slice(0, 2)
     .toUpperCase();
+}
+
+export function calculateAge(birthDate: string) {
+  const date = new Date(birthDate);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - date.getFullYear();
+  const monthDelta = today.getMonth() - date.getMonth();
+
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < date.getDate())) {
+    age -= 1;
+  }
+
+  return age;
 }

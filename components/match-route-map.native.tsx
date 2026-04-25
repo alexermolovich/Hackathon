@@ -48,14 +48,14 @@ export function MatchRouteMap(_props: MatchRouteMapProps) {
             key={dot.id}
             coordinate={dot.coordinate}
             pinColor={index === 0 ? '#10B981' : '#F59E0B'}
-            title={`Task ${index + 1}`}
+            title={`Gig ${index + 1}`}
           />
         ))}
       </MapView>
 
       <View style={styles.topPill} pointerEvents="none">
         <Ionicons name="map" size={13} color="#FFFFFF" />
-        <Text style={styles.topPillText}>Rapid City match map</Text>
+        <Text style={styles.topPillText}>Rapid City hustle map</Text>
       </View>
     </View>
   );

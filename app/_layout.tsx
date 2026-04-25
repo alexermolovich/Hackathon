@@ -5,13 +5,14 @@ import { StatusBar } from 'expo-status-bar';
 import '../global.css';
 import 'react-native-reanimated';
 
+import { OnboardingScreen } from '@/components/onboarding-screen';
 import { GigProvider, useGigStore } from '@/lib/gig-store';
 
 export const unstable_settings = {
   anchor: '(tabs)',
 };
 
-const gigSwipeTheme = {
+const sideHustleTheme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
@@ -23,7 +24,7 @@ const gigSwipeTheme = {
   },
 };
 
-const gigSwipeLightTheme = {
+const sideHustleLightTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
@@ -46,11 +47,15 @@ export default function RootLayout() {
 }
 
 function ThemedAppShell() {
-  const { isDark } = useGigStore();
+  const { isDark, profile } = useGigStore();
   const backgroundColor = isDark ? '#000000' : '#F4F4F5';
 
+  if (!profile.is_onboarded) {
+    return <OnboardingScreen />;
+  }
+
   return (
-    <ThemeProvider value={isDark ? gigSwipeTheme : gigSwipeLightTheme}>
+    <ThemeProvider value={isDark ? sideHustleTheme : sideHustleLightTheme}>
       <Stack screenOptions={{ contentStyle: { backgroundColor }, headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[matchId]" />

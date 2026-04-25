@@ -1,86 +1,122 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { Image } from 'expo-image';
 import { Link } from 'expo-router';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
+import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
+import { CreditBadge } from '@/components/credit-badge';
 import { MatchRevealCard } from '@/components/match-reveal-card';
 import { PrimaryButton } from '@/components/primary-button';
+import { ProfilePanel } from '@/components/profile-panel';
 import { VerifiedBadge } from '@/components/verified-badge';
-import type { EnrichedMatch } from '@/lib/gig-types';
+import type { EnrichedMatch, Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 export default function MatchesScreen() {
   const {
     profile,
     matches,
-    likeBack,
+    unlockChat,
     completeMatch,
     celebratedMatchId,
     clearCelebration,
     isDark,
   } = useGigStore();
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
-  const posterQueue = matches.filter((match) => match.task.poster_id === profile.id && match.status === 'pending');
-  const doerMatches = matches.filter((match) => match.doer_id === profile.id);
-  const activeMatches = doerMatches.filter((match) => match.status === 'matched');
-  const pendingBids = doerMatches.filter((match) => match.status === 'pending');
-  const completed = doerMatches.filter((match) => match.status === 'completed');
+  const readyHustles = matches.filter((match) => match.doer_id === profile.id && match.status === 'matched');
+  const pendingBids = matches.filter((match) => match.doer_id === profile.id && match.status === 'pending');
+  const completed = matches.filter((match) => match.doer_id === profile.id && match.status === 'completed');
 
   const celebratedMatch = matches.find((match) => match.id === celebratedMatchId);
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
 
+  async function handleUnlock(matchId: string) {
+    const ok = await unlockChat(matchId);
+
+    if (!ok) {
+      setPurchaseOpen(true);
+    }
+  }
+
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2">
-        <View className="mb-6">
-          <Text className="text-sm font-semibold text-violet-200">Double opt-in</Text>
-          <Text className={`text-3xl font-black ${titleClass}`}>Matches</Text>
+        <View className="mb-6 flex-row items-center justify-between">
+          <View>
+            <Text className="text-sm font-semibold text-orange-400">Picked by gig starters</Text>
+            <Text className={`text-3xl font-black ${titleClass}`}>Hustles</Text>
+          </View>
+          <View className="flex-row items-center gap-2">
+            <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setProfileOpen(true)}
+              className={`h-11 w-11 items-center justify-center rounded-full border ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
+              <Ionicons name="ellipsis-horizontal" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
+            </Pressable>
+          </View>
         </View>
 
-        <SectionHeader title="Poster review" count={posterQueue.length} icon="people" />
-        {posterQueue.length === 0 ? (
-          <EmptyState copy="Incoming bids will appear here with vouch score, rating, and verification status." />
+        <SectionHeader title="Ready to unlock" count={readyHustles.length} icon="lock-open" />
+        {readyHustles.length === 0 ? (
+          <EmptyState copy="When a gig starter picks your counter bid, the hustle lands here." />
         ) : (
-          posterQueue.map((match) => (
-            <PosterReviewCard
+          readyHustles.map((match) => (
+            <HustleCard
               key={match.id}
               match={match}
-              onLikeBack={() => void likeBack(match.id)}
+              onUnlock={() => void handleUnlock(match.id)}
+              onComplete={() => void completeMatch(match.id)}
             />
           ))
         )}
 
-        <SectionHeader title="Ready to unlock" count={activeMatches.length} icon="lock-open" />
-        {activeMatches.length === 0 ? (
-          <EmptyState copy="When posters like you back, the match lands here with chat behind the 5-credit unlock." />
+        <SectionHeader title="Pending bids" count={pendingBids.length} icon="time" />
+        {pendingBids.length === 0 ? (
+          <EmptyState copy="Your right-swipe bids wait here until the gig starter picks you." />
         ) : (
-          activeMatches.map((match) => <MatchRow key={match.id} match={match} onComplete={() => void completeMatch(match.id)} />)
+          pendingBids.map((match) => <PendingBid key={match.id} match={match} />)
         )}
 
-        <SectionHeader title="Pending bids" count={pendingBids.length} icon="time" />
-        {pendingBids.map((match) => (
-          <View
-            key={match.id}
-            className={`mb-3 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
-            <Text className={`mb-1 text-lg font-black ${titleClass}`}>{match.task.title}</Text>
-            <Text className={`text-sm leading-5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>{match.bid_note}</Text>
-          </View>
-        ))}
-
-        <SectionHeader title="Completed vouches" count={completed.length} icon="star" />
-        {completed.map((match) => (
-          <View key={match.id} className="mb-3 flex-row items-center gap-3 rounded-[26px] border border-emerald-400/20 bg-emerald-500/10 p-4">
-            <Ionicons name="checkmark-circle" size={24} color="#34D399" />
-            <View className="flex-1">
-              <Text className={`font-black ${titleClass}`}>{match.task.title}</Text>
-              <Text className={`text-sm ${isDark ? 'text-emerald-100' : 'text-emerald-700'}`}>Vouch added to your profile</Text>
+        <SectionHeader title="Finished hustles" count={completed.length} icon="medal" />
+        {completed.length === 0 ? (
+          <EmptyState copy="Completed gigs become Sweat Wins on your profile." />
+        ) : (
+          completed.map((match) => (
+            <View key={match.id} className="mb-3 flex-row items-center gap-3 rounded-[26px] border border-emerald-400/20 bg-emerald-500/10 p-4">
+              <Ionicons name="checkmark-circle" size={24} color="#34D399" />
+              <View className="flex-1">
+                <Text className={`font-black ${titleClass}`}>{match.task.title}</Text>
+                <Text className={`text-sm ${isDark ? 'text-emerald-100' : 'text-emerald-700'}`}>Sweat Win added</Text>
+              </View>
             </View>
-          </View>
-        ))}
+          ))
+        )}
       </ScrollView>
 
+      <Modal transparent animationType="slide" visible={profileOpen} onRequestClose={() => setProfileOpen(false)}>
+        <View className="flex-1 justify-end bg-black/60">
+          <View className={`max-h-[88%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-8">
+              <ProfilePanel />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <BstPurchaseSheet
+        visible={purchaseOpen}
+        reason={`Unlocking a hustle costs ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME}.`}
+        onClose={() => setPurchaseOpen(false)}
+      />
       {celebratedMatch && <MatchRevealCard match={celebratedMatch} onDismiss={clearCelebration} />}
     </SafeAreaView>
   );
@@ -100,91 +136,121 @@ function SectionHeader({ title, count, icon }: { title: string; count: number; i
   );
 }
 
-function PosterReviewCard({ match, onLikeBack }: { match: EnrichedMatch; onLikeBack: () => void }) {
+function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onUnlock: () => void; onComplete: () => void }) {
   const { isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+  const reveal = match.is_unlocked;
 
   return (
     <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
       <View className="mb-4 flex-row items-center gap-3">
-        <Avatar profile={match.doer} size={58} />
+        {reveal ? <Avatar profile={match.poster} size={54} /> : <HiddenAvatar poster={match.poster} />}
         <View className="flex-1">
-          <View className="mb-1 flex-row items-center gap-2">
-            <Text className={`text-lg font-black ${titleClass}`}>{match.doer.username}</Text>
-            <VerifiedBadge verified={match.doer.is_verified} compact />
+          <View className="flex-row items-center gap-2">
+            <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>
+              {reveal ? match.poster.username : 'Gig starter hidden'}
+            </Text>
+            {reveal && <VerifiedBadge verified={match.poster.is_verified} compact />}
           </View>
-          <Text className={`text-sm ${mutedClass}`}>{match.task.title}</Text>
+          <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>{match.task.title}</Text>
         </View>
+        <Ionicons name={reveal ? 'chatbubble-ellipses' : 'lock-closed'} size={22} color="#A78BFA" />
       </View>
 
+      {match.task.image_urls[0] && (
+        <Image source={{ uri: match.task.image_urls[0] }} style={{ borderRadius: 22, height: 128, marginBottom: 16, width: '100%' }} contentFit="cover" />
+      )}
+
+      <View className="mb-4 flex-row flex-wrap gap-2">
+        <Chip icon="pricetag" label={match.task.category} />
+        <Chip icon="navigate-circle" label={match.task.location_label} />
+        <Chip icon="calendar" label={match.task.date_window || 'Flexible'} />
+      </View>
+
+      <Text className={`mb-4 text-sm leading-5 ${mutedClass}`} numberOfLines={3}>{match.task.description}</Text>
+
       <View className="mb-4 flex-row gap-3">
-        <TrustMetric icon="shield-checkmark" label="Vouches" value={match.doer.vouch_count.toString()} />
-        <TrustMetric icon="star" label="Rating" value={match.doer.rating.toFixed(2)} />
+        <Metric label="Your bid" value={`$${match.counter_bid}`} />
+        <Metric label="Budget" value={`$${match.task.budget}`} />
       </View>
 
       <View className={`mb-4 rounded-[24px] p-4 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
-        <Text className="mb-1 text-xs font-bold text-violet-200">Quick bid</Text>
+        <Text className="mb-1 text-xs font-bold text-orange-400">Your note</Text>
         <Text className={`text-base leading-6 ${titleClass}`}>{match.bid_note}</Text>
       </View>
 
-      <PrimaryButton label="Like Back" icon="heart" tone="emerald" onPress={onLikeBack} />
+      {reveal ? (
+        <View className="gap-3">
+          <Link href={{ pathname: '/chat/[matchId]', params: { matchId: match.id } }} asChild>
+            <Pressable accessibilityRole="button" className="min-h-12 flex-row items-center justify-center gap-2 rounded-3xl bg-violet px-5">
+              <Ionicons name="chatbubbles" size={18} color="#FFFFFF" />
+              <Text className="text-sm font-bold text-white">Open Chat</Text>
+            </Pressable>
+          </Link>
+          <PrimaryButton label="Mark Completed" icon="checkmark" tone="ghost" onPress={onComplete} />
+        </View>
+      ) : (
+        <PrimaryButton
+          label={`Unlock (${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME})`}
+          icon="flame"
+          onPress={onUnlock}
+        />
+      )}
     </View>
   );
 }
 
-function TrustMetric({
-  icon,
-  label,
-  value,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-}) {
-  const { isDark } = useGigStore();
-
-  return (
-    <View className={`flex-1 rounded-[24px] border p-4 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100'}`}>
-      <Ionicons name={icon} size={18} color="#34D399" />
-      <Text className={`mt-3 text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>{value}</Text>
-      <Text className={`text-xs font-semibold ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>{label}</Text>
-    </View>
-  );
-}
-
-function MatchRow({ match, onComplete }: { match: EnrichedMatch; onComplete: () => void }) {
+function PendingBid({ match }: { match: EnrichedMatch }) {
   const { isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
 
   return (
-    <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
-      <Link href={{ pathname: '/chat/[matchId]', params: { matchId: match.id } }} asChild>
-        <Pressable>
-          <View className="mb-4 flex-row items-center gap-3">
-            <Avatar profile={match.poster} size={54} />
-            <View className="flex-1">
-              <View className="flex-row items-center gap-2">
-                <Text className={`text-lg font-black ${titleClass}`}>{match.poster.username}</Text>
-                <VerifiedBadge verified={match.poster.is_verified} compact />
-              </View>
-              <Text className={`text-sm ${mutedClass}`}>{match.task.title}</Text>
-            </View>
-            <Ionicons name={match.is_unlocked ? 'chatbubble-ellipses' : 'lock-closed'} size={22} color="#A78BFA" />
-          </View>
+    <View className={`mb-3 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
+      <View className="mb-3 flex-row items-center justify-between gap-3">
+        <Text className={`flex-1 text-lg font-black ${titleClass}`} numberOfLines={1}>{match.task.title}</Text>
+        <Text className="rounded-full bg-violet/20 px-3 py-1 text-xs font-bold text-violet-300">${match.counter_bid}</Text>
+      </View>
+      <Text className={`mb-2 text-sm ${mutedClass}`}>{match.availability_window || 'Flexible availability'}</Text>
+      <Text className={`text-sm leading-5 ${mutedClass}`}>{match.bid_note}</Text>
+    </View>
+  );
+}
 
-          <View className={`mb-4 flex-row items-center justify-between rounded-[24px] p-4 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
-            <View>
-              <Text className="text-xs font-bold text-violet-200">{match.is_unlocked ? 'Chat open' : 'Paywall active'}</Text>
-              <Text className={`text-base font-black ${titleClass}`}>{match.is_unlocked ? 'Finalize the gig' : 'Unlock for 5 credits'}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={22} color="#FFFFFF" />
-          </View>
-        </Pressable>
-      </Link>
+function HiddenAvatar({ poster }: { poster: Profile }) {
+  return (
+    <View className="h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-violet/25">
+      {poster.avatar_url ? (
+        <>
+          <Image source={{ uri: poster.avatar_url }} style={{ height: 56, width: 56 }} contentFit="cover" />
+          <BlurView intensity={30} tint="dark" className="absolute inset-0" />
+        </>
+      ) : (
+        <Ionicons name="person" size={24} color="#C4B5FD" />
+      )}
+    </View>
+  );
+}
 
-      {match.is_unlocked && <PrimaryButton label="Mark Completed" icon="checkmark" tone="ghost" onPress={onComplete} />}
+function Chip({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
+  const { isDark } = useGigStore();
+
+  return (
+    <View className={`flex-row items-center gap-1 rounded-full px-3 py-2 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+      <Ionicons name={icon} size={14} color="#8B5CF6" />
+      <Text className={`text-xs font-bold ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`} numberOfLines={1}>{label}</Text>
+    </View>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  const { isDark } = useGigStore();
+
+  return (
+    <View className={`flex-1 rounded-[22px] px-3 py-3 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+      <Text className={`text-xs font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>{label}</Text>
+      <Text className={`mt-1 text-xl font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>{value}</Text>
     </View>
   );
 }

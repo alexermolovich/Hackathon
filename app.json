@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "GigSwipe",
-    "slug": "gigswipe",
+    "name": "SideHustle",
+    "slug": "sidehustle",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "gigswipe",
+    "scheme": "sidehustle",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
@@ -30,13 +30,13 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "GigSwipe uses your location to show nearby gigs within your selected radius."
+          "locationAlwaysAndWhenInUsePermission": "SideHustle uses your location to show nearby gigs within your selected radius."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "GigSwipe uses a selfie image to mock identity verification."
+          "photosPermission": "SideHustle uses photos for profile pictures and gig reference images."
         }
       ],
       [

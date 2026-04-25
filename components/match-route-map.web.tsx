@@ -18,7 +18,7 @@ export function MatchRouteMap(_props: MatchRouteMapProps) {
         style: iframeStyle,
         loading: 'lazy',
         referrerPolicy: 'no-referrer-when-downgrade',
-        title: 'Rapid City Match Map',
+        title: 'Rapid City Hustle Map',
       })}
 
       <View style={styles.mapScrim} pointerEvents="none" />
@@ -41,7 +41,7 @@ export function MatchRouteMap(_props: MatchRouteMapProps) {
 
       <View style={styles.topPill} pointerEvents="none">
         <Ionicons name="map" size={13} color="#FFFFFF" />
-        <Text style={styles.topPillText}>Rapid City match map</Text>
+        <Text style={styles.topPillText}>Rapid City hustle map</Text>
       </View>
     </View>
   );

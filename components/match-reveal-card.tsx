@@ -22,9 +22,11 @@ export function MatchRevealCard({ match, onDismiss }: MatchRevealCardProps) {
   const scale = useSharedValue(1);
 
   const participant = match.doer_id === profile.id ? match.poster : match.doer;
+  const isPoster = match.task.poster_id === profile.id;
+  const canRevealParticipant = match.is_unlocked || isPoster;
   const target = useMemo(
-    () => (targetMode === 'person' ? participant.location : match.task.location),
-    [match.task.location, participant.location, targetMode],
+    () => (targetMode === 'person' && canRevealParticipant ? participant.location : match.task.location),
+    [canRevealParticipant, match.task.location, participant.location, targetMode],
   );
 
   const cardStyle = useAnimatedStyle(() => ({
@@ -63,19 +65,23 @@ export function MatchRevealCard({ match, onDismiss }: MatchRevealCardProps) {
                 <Ionicons name="heart" size={22} color="#FFFFFF" />
               </View>
               <View className="flex-1">
-                <Text className={`text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>Match made</Text>
-                <Text className={isDark ? 'text-zinc-400' : 'text-zinc-600'}>{participant.username} liked you back</Text>
+                <Text className={`text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>Hustle made</Text>
+                <Text className={isDark ? 'text-zinc-400' : 'text-zinc-600'}>
+                  {canRevealParticipant ? `${participant.username} picked you` : 'A gig starter picked your bid'}
+                </Text>
               </View>
             </View>
           </Pressable>
 
           <View className="mb-4 flex-row gap-2">
-            <TargetButton active={targetMode === 'task'} label="Task" icon="briefcase" onPress={() => setTargetMode('task')} />
-            <TargetButton active={targetMode === 'person'} label="Person" icon="person" onPress={() => setTargetMode('person')} />
+            <TargetButton active={targetMode === 'task'} label="Gig" icon="briefcase" onPress={() => setTargetMode('task')} />
+            {canRevealParticipant && (
+              <TargetButton active={targetMode === 'person'} label="Person" icon="person" onPress={() => setTargetMode('person')} />
+            )}
           </View>
 
           <Pressable onPress={onDismiss} className="mb-5">
-            {targetMode === 'person' ? (
+            {targetMode === 'person' && canRevealParticipant ? (
               <PersonDetail participant={participant} />
             ) : (
               <TaskDetail task={match.task} />
@@ -93,7 +99,7 @@ export function MatchRevealCard({ match, onDismiss }: MatchRevealCardProps) {
                 }}
                 className="min-h-12 flex-1 flex-row items-center justify-center gap-2 rounded-3xl bg-emerald px-5">
                 <Ionicons name="chatbubbles" size={18} color="#FFFFFF" />
-                <Text className="text-sm font-bold text-white">Open Chat</Text>
+                <Text className="text-sm font-bold text-white">{match.is_unlocked || isPoster ? 'Open Chat' : 'Unlock Chat'}</Text>
               </Pressable>
             </Link>
           </View>

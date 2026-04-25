@@ -20,8 +20,8 @@ type MatchBurstProps = {
 
 export function MatchBurst({
   visible,
-  title = 'It is a match',
-  subtitle = 'The chat is ready behind the credit unlock.',
+  title = 'Hustle made',
+  subtitle = 'The chat is ready behind the BST unlock.',
   onDismiss,
 }: MatchBurstProps) {
   const scale = useSharedValue(0.86);

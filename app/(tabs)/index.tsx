@@ -3,34 +3,50 @@ import { BlurView } from 'expo-blur';
 import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Swiper from 'react-native-deck-swiper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
+import { CategorySelector } from '@/components/category-selector';
 import { CreditBadge } from '@/components/credit-badge';
 import { MatchRevealCard } from '@/components/match-reveal-card';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
-import { TaskComposer } from '@/components/task-composer';
+import { RadiusSlider } from '@/components/radius-slider';
 import { TaskCard } from '@/components/task-card';
 import type { Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { APP_NAME } from '@/lib/sidehustle-config';
 
-const QUICK_BID = 'I can help with this right now!';
+const QUICK_BID = 'I can help with this and keep you updated the whole way.';
 
 export default function GigDeckScreen() {
-  const { deck, profiles, profile, submitMatchedBid, isLiveMode, matches, isDark } = useGigStore();
+  const {
+    deck,
+    profiles,
+    profile,
+    submitBid,
+    isLiveMode,
+    matches,
+    celebratedMatchId,
+    clearCelebration,
+    isDark,
+    updateRadius,
+    updateInterests,
+  } = useGigStore();
   const swiperRef = useRef<Swiper<Task>>(null);
-  const suppressBidModalRef = useRef(false);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [bidNote, setBidNote] = useState(QUICK_BID);
-  const [postOpen, setPostOpen] = useState(false);
+  const [counterBid, setCounterBid] = useState('');
+  const [availabilityWindow, setAvailabilityWindow] = useState('');
   const [profileOpen, setProfileOpen] = useState(false);
-  const [revealedMatchId, setRevealedMatchId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
 
   const postersById = useMemo(() => new Map(profiles.map((item) => [item.id, item])), [profiles]);
-  const revealedMatch = matches.find((match) => match.id === revealedMatchId);
+  const celebratedMatch = matches.find((match) => match.id === celebratedMatchId);
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
@@ -46,26 +62,7 @@ export default function GigDeckScreen() {
     swiperRef.current?.swipeRight();
   }
 
-  async function handleInstantMatch() {
-    const task = deck[activeCardIndex];
-
-    if (!task) {
-      return;
-    }
-
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const match = await submitMatchedBid(task, QUICK_BID);
-    setRevealedMatchId(match.id);
-    suppressBidModalRef.current = true;
-    swiperRef.current?.swipeRight();
-  }
-
   function onSwipedRight(cardIndex: number) {
-    if (suppressBidModalRef.current) {
-      suppressBidModalRef.current = false;
-      return;
-    }
-
     const task = deck[cardIndex];
 
     if (!task) {
@@ -75,25 +72,38 @@ export default function GigDeckScreen() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSelectedTask(task);
     setBidNote(QUICK_BID);
+    setCounterBid(String(task.budget));
+    setAvailabilityWindow(task.date_window);
   }
 
-  async function submitQuickBid() {
-    if (!selectedTask || !bidNote.trim()) {
+  async function submitCounterBid() {
+    if (!selectedTask) {
       return;
     }
 
-    const match = await submitMatchedBid(selectedTask, bidNote);
-    setRevealedMatchId(match.id);
+    const parsedCounterBid = Number(counterBid);
+
+    if (!bidNote.trim() || !Number.isFinite(parsedCounterBid) || parsedCounterBid < 1) {
+      Alert.alert('Bid details needed', 'Add a counter bid and a short note.');
+      return;
+    }
+
+    await submitBid(selectedTask, {
+      bidNote,
+      counterBid: parsedCounterBid,
+      availabilityWindow,
+    });
     setSelectedTask(null);
+    Alert.alert('Bid sent', 'If the gig starter picks you, it will appear in Hustles.');
   }
 
   useFocusEffect(
     useCallback(() => {
       return () => {
         setSelectedTask(null);
-        setPostOpen(false);
         setProfileOpen(false);
-        setRevealedMatchId(null);
+        setSettingsOpen(false);
+        setPurchaseOpen(false);
       };
     }, []),
   );
@@ -103,11 +113,11 @@ export default function GigDeckScreen() {
       <View className="flex-1 px-5 pb-4 pt-2">
         <View className="mb-4 flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-violet-200">GigSwipe</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>Nearby gigs</Text>
+            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
+            <Text className={`text-3xl font-black ${titleClass}`}>Find gigs</Text>
           </View>
           <View className="flex-row items-center gap-2">
-            <CreditBadge credits={profile.credits} />
+            <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
             <Pressable
               accessibilityRole="button"
               onPress={() => setProfileOpen(true)}
@@ -117,16 +127,21 @@ export default function GigDeckScreen() {
           </View>
         </View>
 
-        <View className={`mb-4 flex-row items-center justify-between rounded-[28px] border px-4 py-3 ${panelClass}`}>
-          <View className="flex-row items-center gap-2">
-            <Ionicons name="navigate-circle" size={18} color="#8B5CF6" />
-            <Text className={`font-semibold ${titleClass}`}>Rapid City - 8 mile radius</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setSettingsOpen(true)}
+          className={`mb-4 flex-row items-center justify-between rounded-[28px] border px-4 py-3 ${panelClass}`}>
+          <View className="flex-1 flex-row items-center gap-2">
+            <Ionicons name="options" size={18} color="#8B5CF6" />
+            <Text className={`font-semibold ${titleClass}`} numberOfLines={1}>
+              {profile.search_radius} mi - {profile.interests.length} categories
+            </Text>
           </View>
           <View className="flex-row items-center gap-2">
             <View className={`h-2 w-2 rounded-full ${isLiveMode ? 'bg-emerald' : 'bg-violet'}`} />
-            <Text className={`text-xs font-semibold ${mutedClass}`}>{isLiveMode ? 'Live Supabase' : 'Demo data'}</Text>
+            <Text className={`text-xs font-semibold ${mutedClass}`}>{isLiveMode ? 'Live' : 'Demo'}</Text>
           </View>
-        </View>
+        </Pressable>
 
         <View className="flex-1">
           {deck.length > 0 ? (
@@ -171,17 +186,17 @@ export default function GigDeckScreen() {
           ) : (
             <View className={`flex-1 items-center justify-center rounded-[32px] border px-8 ${panelClass}`}>
               <View className="mb-5 h-20 w-20 items-center justify-center rounded-full bg-violet/20">
-                <Ionicons name="location" size={34} color="#C4B5FD" />
+                <Ionicons name="briefcase" size={34} color="#C4B5FD" />
               </View>
               <Text className={`mb-2 text-center text-3xl font-black ${titleClass}`}>No gigs in range</Text>
               <Text className={`text-center text-base leading-6 ${mutedClass}`}>
-                Increase your radius or add more skills from Profile to open up the deck.
+                Adjust proximity or categories to open up the deck.
               </Text>
             </View>
           )}
         </View>
 
-        <View className="relative mt-5 h-20 items-center justify-center">
+        <View className="mt-5 h-20 items-center justify-center">
           <View className="flex-row items-center gap-5">
             <Pressable
               accessibilityRole="button"
@@ -193,24 +208,9 @@ export default function GigDeckScreen() {
               accessibilityRole="button"
               onPress={handleBid}
               className="h-20 w-20 items-center justify-center rounded-full bg-violet">
-              <Ionicons name="flash" size={34} color="#FFFFFF" />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => void handleInstantMatch()}
-              className={`h-16 w-16 items-center justify-center rounded-full border border-emerald-400/30 ${
-                isDark ? 'bg-emerald-500/20' : 'bg-emerald-500/10'
-              }`}>
-              <Ionicons name="sparkles" size={28} color="#10B981" />
+              <Ionicons name="flame" size={34} color="#FFFFFF" />
             </Pressable>
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setPostOpen(true)}
-            className="h-16 w-16 items-center justify-center rounded-full bg-violet"
-            style={{ position: 'absolute', right: -6 }}>
-            <Ionicons name="add" size={34} color="#FFFFFF" />
-          </Pressable>
         </View>
       </View>
 
@@ -218,13 +218,40 @@ export default function GigDeckScreen() {
         <View className="flex-1 justify-end bg-black/75">
           <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View className={`rounded-t-[34px] border p-6 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
-            <Text className="mb-2 text-sm font-bold text-violet-200">Quick bid</Text>
-            <Text className={`mb-5 text-3xl font-black ${titleClass}`}>{selectedTask?.title}</Text>
+            <Text className="mb-2 text-sm font-bold text-orange-400">Counter bid</Text>
+            <Text className={`mb-1 text-3xl font-black ${titleClass}`}>{selectedTask?.title}</Text>
+            <Text className={`mb-5 text-sm ${mutedClass}`}>{selectedTask?.location_label}</Text>
+            <View className="mb-5 flex-row gap-3">
+              <View className="flex-1">
+                <Text className={`mb-2 text-sm font-bold ${mutedClass}`}>Your bid</Text>
+                <View className={`flex-row items-center rounded-[24px] border px-4 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100'}`}>
+                  <Text className={`text-xl font-black ${titleClass}`}>$</Text>
+                  <TextInput
+                    value={counterBid}
+                    onChangeText={setCounterBid}
+                    keyboardType="numeric"
+                    className={`flex-1 py-4 text-xl font-black ${titleClass}`}
+                  />
+                </View>
+              </View>
+              <View className="flex-1">
+                <Text className={`mb-2 text-sm font-bold ${mutedClass}`}>Availability</Text>
+                <TextInput
+                  value={availabilityWindow}
+                  onChangeText={setAvailabilityWindow}
+                  placeholder="Optional"
+                  placeholderTextColor="#71717A"
+                  className={`rounded-[24px] border px-4 py-4 text-base ${
+                    isDark ? 'border-white/10 bg-white/10 text-white' : 'border-zinc-200 bg-zinc-100 text-zinc-950'
+                  }`}
+                />
+              </View>
+            </View>
             <TextInput
               multiline
               value={bidNote}
               onChangeText={setBidNote}
-              placeholder="Tell the poster why you are a strong fit."
+              placeholder="Tell the gig starter why you are a strong fit."
               placeholderTextColor="#71717A"
               className={`mb-5 min-h-28 rounded-[24px] border p-4 text-base leading-6 ${
                 isDark ? 'border-white/10 bg-white/10 text-white' : 'border-zinc-200 bg-zinc-100 text-zinc-950'
@@ -236,7 +263,7 @@ export default function GigDeckScreen() {
               <PrimaryButton
                 label="Send Bid"
                 icon="send"
-                onPress={() => void submitQuickBid()}
+                onPress={() => void submitCounterBid()}
                 disabled={!bidNote.trim()}
                 style={{ flex: 1 }}
               />
@@ -245,10 +272,30 @@ export default function GigDeckScreen() {
         </View>
       </Modal>
 
-      <Modal transparent animationType="slide" visible={postOpen} onRequestClose={() => setPostOpen(false)}>
+      <Modal transparent animationType="slide" visible={settingsOpen} onRequestClose={() => setSettingsOpen(false)}>
         <View className="flex-1 justify-end bg-black/60">
           <View className={`max-h-[88%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
-            <TaskComposer onCreated={() => setPostOpen(false)} />
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-8">
+              <View className="mb-5 flex-row items-center justify-between">
+                <View>
+                  <Text className="text-sm font-bold text-orange-400">Deck settings</Text>
+                  <Text className={`text-3xl font-black ${titleClass}`}>Tune gigs</Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setSettingsOpen(false)}
+                  className={`h-11 w-11 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-white'}`}>
+                  <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
+                </Pressable>
+              </View>
+              <View className={`mb-5 rounded-[28px] border p-5 ${panelClass}`}>
+                <RadiusSlider value={profile.search_radius} onChange={updateRadius} />
+              </View>
+              <View className={`mb-5 rounded-[28px] border p-5 ${panelClass}`}>
+                <Text className={`mb-3 text-xl font-black ${titleClass}`}>Categories</Text>
+                <CategorySelector selected={profile.interests} onChange={updateInterests} minSelected={1} />
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -263,7 +310,8 @@ export default function GigDeckScreen() {
         </View>
       </Modal>
 
-      {revealedMatch && <MatchRevealCard match={revealedMatch} onDismiss={() => setRevealedMatchId(null)} />}
+      <BstPurchaseSheet visible={purchaseOpen} onClose={() => setPurchaseOpen(false)} />
+      {celebratedMatch && <MatchRevealCard match={celebratedMatch} onDismiss={clearCelebration} />}
     </SafeAreaView>
   );
 }

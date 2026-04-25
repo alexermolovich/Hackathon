@@ -9,13 +9,28 @@ export type Profile = {
   avatar_url: string | null;
   bio: string;
   skills: string[];
+  interests: string[];
   credits: number;
   location: Coordinates;
   search_radius: number;
   is_verified: boolean;
+  is_onboarded: boolean;
+  google_authenticated: boolean;
+  phone_number: string;
+  birth_date: string;
+  education_level: string | null;
+  accepted_terms_at: string | null;
+  signup_bonus_awarded: boolean;
+  daily_streak: number;
+  weekly_streak: number;
+  monthly_streak: number;
+  last_reward_claimed_at: string | null;
   vouch_count: number;
+  posted_vouch_count: number;
   rating: number;
 };
+
+export type TaskStatus = 'open' | 'archived';
 
 export type Task = {
   id: string;
@@ -24,10 +39,15 @@ export type Task = {
   description: string;
   budget: number;
   category: string;
+  location_label: string;
   location: Coordinates;
   required_skills: string[];
   image_urls: string[];
   is_boosted: boolean;
+  boost_days: number;
+  boost_cost_bsts: number;
+  date_window: string;
+  status: TaskStatus;
   created_at: string;
 };
 
@@ -38,6 +58,8 @@ export type GigMatch = {
   task_id: string;
   doer_id: string;
   bid_note: string;
+  counter_bid: number;
+  availability_window: string;
   is_unlocked: boolean;
   status: MatchStatus;
   created_at: string;

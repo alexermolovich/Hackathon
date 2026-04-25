@@ -31,7 +31,7 @@ export function MatchRouteMap(_props: MatchRouteMapProps) {
       ))}
       <View style={styles.topPill}>
         <Ionicons name="map" size={13} color="#FFFFFF" />
-        <Text style={styles.topPillText}>Rapid City match map</Text>
+        <Text style={styles.topPillText}>Rapid City hustle map</Text>
       </View>
     </View>
   );

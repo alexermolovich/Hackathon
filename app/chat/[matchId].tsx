@@ -1,15 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
+import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
 import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
+import type { Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const GOOGLE_MAPS_URL_PATTERN = /(https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=[^\s]+)/;
 
@@ -17,6 +21,7 @@ export default function ChatScreen() {
   const { matchId } = useLocalSearchParams<{ matchId: string }>();
   const { profile, matches, messages, unlockChat, sendMessage, isDark } = useGigStore();
   const [draft, setDraft] = useState('');
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
 
   const match = matches.find((item) => item.id === matchId);
   const threadMessages = useMemo(
@@ -32,7 +37,7 @@ export default function ChatScreen() {
   if (!match) {
     return (
       <SafeAreaView className={`flex-1 items-center justify-center px-6 ${shellClass}`}>
-        <Text className={`mb-5 text-center text-3xl font-black ${titleClass}`}>Match not found</Text>
+        <Text className={`mb-5 text-center text-3xl font-black ${titleClass}`}>Hustle not found</Text>
         <PrimaryButton label="Back" icon="arrow-back" tone="ghost" onPress={() => router.back()} />
       </SafeAreaView>
     );
@@ -40,13 +45,15 @@ export default function ChatScreen() {
 
   const activeMatch = match;
   const participant = activeMatch.doer_id === profile.id ? activeMatch.poster : activeMatch.doer;
-  const locked = !activeMatch.is_unlocked;
+  const isDoer = activeMatch.doer_id === profile.id;
+  const locked = isDoer && !activeMatch.is_unlocked;
+  const revealParticipant = !locked || !isDoer;
 
   async function handleUnlock() {
     const ok = await unlockChat(activeMatch.id);
 
     if (!ok) {
-      Alert.alert('Credits needed', 'Unlocking a matched chat costs 5 credits.');
+      setPurchaseOpen(true);
     }
   }
 
@@ -66,17 +73,17 @@ export default function ChatScreen() {
               className={`h-11 w-11 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-white'}`}>
               <Ionicons name="arrow-back" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
             </Pressable>
-            <Avatar profile={participant} size={48} />
+            {revealParticipant ? <Avatar profile={participant} size={48} /> : <HiddenAvatar profile={participant} />}
             <View className="flex-1">
               <View className="flex-row items-center gap-2">
-                <Text className={`text-lg font-black ${titleClass}`}>{participant.username}</Text>
-                <VerifiedBadge verified={participant.is_verified} compact />
+                <Text className={`text-lg font-black ${titleClass}`}>{revealParticipant ? participant.username : 'Gig starter hidden'}</Text>
+                {revealParticipant && <VerifiedBadge verified={participant.is_verified} compact />}
               </View>
               <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>
                 {activeMatch.task.title}
               </Text>
             </View>
-            <CreditBadge credits={profile.credits} />
+            <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
           </View>
         </View>
 
@@ -107,9 +114,9 @@ export default function ChatScreen() {
                 </View>
                 <Text className={`mb-2 text-3xl font-black ${titleClass}`}>Chat locked</Text>
                 <Text className={`mb-6 text-base leading-6 ${mutedClass}`}>
-                  Spend 5 credits to reveal the thread and finalize the gig with {participant.username}.
+                  Spend {CHAT_UNLOCK_COST_BSTS} {CURRENCY_NAME} to reveal the thread and finalize the gig.
                 </Text>
-                <PrimaryButton label="Unlock Chat (5 Credits)" icon="flash" onPress={() => void handleUnlock()} />
+                <PrimaryButton label={`Unlock Chat (${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME})`} icon="flame" onPress={() => void handleUnlock()} />
               </View>
             </View>
           )}
@@ -138,8 +145,28 @@ export default function ChatScreen() {
             </Pressable>
           </View>
         </View>
+        <BstPurchaseSheet
+          visible={purchaseOpen}
+          reason={`Unlocking this hustle costs ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME}.`}
+          onClose={() => setPurchaseOpen(false)}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+function HiddenAvatar({ profile }: { profile: Profile }) {
+  return (
+    <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-violet/25">
+      {profile.avatar_url ? (
+        <>
+          <Image source={{ uri: profile.avatar_url }} style={{ height: 48, width: 48 }} contentFit="cover" />
+          <BlurView intensity={30} tint="dark" className="absolute inset-0" />
+        </>
+      ) : (
+        <Ionicons name="person" size={22} color="#C4B5FD" />
+      )}
+    </View>
   );
 }
 

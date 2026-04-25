@@ -4,6 +4,13 @@ import { useColorScheme } from 'react-native';
 import type { PropsWithChildren } from 'react';
 
 import {
+  CHAT_UNLOCK_COST_BSTS,
+  DAILY_REWARD_BSTS,
+  MONTHLY_STREAK_BONUS_BSTS,
+  SIGNUP_BONUS_BSTS,
+  WEEKLY_STREAK_BONUS_BSTS,
+} from './sidehustle-config';
+import {
   currentUser as seededCurrentUser,
   matches as seededMatches,
   messages as seededMessages,
@@ -19,9 +26,35 @@ type CreateTaskInput = {
   description: string;
   budget: number;
   category: string;
-  required_skills: string[];
+  location_label: string;
+  date_window: string;
   is_boosted: boolean;
+  boost_days: number;
+  boost_cost_bsts: number;
   image_urls: string[];
+};
+
+type BidInput = {
+  bidNote: string;
+  counterBid: number;
+  availabilityWindow: string;
+};
+
+type OnboardingInput = {
+  username: string;
+  phoneNumber: string;
+  birthDate: string;
+  bio: string;
+  educationLevel: string | null;
+  interests: string[];
+  avatarUrl: string | null;
+};
+
+type RewardResult = {
+  amount: number;
+  dailyStreak: number;
+  weeklyBonus: boolean;
+  monthlyBonus: boolean;
 };
 
 type GigStoreValue = {
@@ -35,22 +68,27 @@ type GigStoreValue = {
   isDark: boolean;
   colorMode: 'light' | 'dark';
   celebratedMatchId: string | null;
-  createTask: (input: CreateTaskInput) => Promise<void>;
-  submitBid: (task: Task, bidNote: string) => Promise<GigMatch>;
-  submitMatchedBid: (task: Task, bidNote: string) => Promise<GigMatch>;
+  createTask: (input: CreateTaskInput) => Promise<boolean>;
+  submitBid: (task: Task, input: BidInput) => Promise<GigMatch>;
+  submitMatchedBid: (task: Task, input: BidInput) => Promise<GigMatch>;
   likeBack: (matchId: string) => Promise<void>;
   unlockChat: (matchId: string) => Promise<boolean>;
   completeMatch: (matchId: string) => Promise<void>;
   sendMessage: (matchId: string, content: string) => Promise<void>;
   verifySelfie: (avatarUri: string) => Promise<void>;
+  completeOnboarding: (input: OnboardingInput) => Promise<void>;
+  buyBsts: (amount: number) => void;
+  claimConsistencyReward: () => RewardResult | null;
   updateRadius: (radius: number) => void;
+  updateInterests: (interests: string[]) => void;
   updateLocation: (coords: Coordinates) => void;
   toggleColorMode: () => void;
+  logout: () => void;
   clearCelebration: () => void;
 };
 
 const GigStoreContext = createContext<GigStoreValue | null>(null);
-const TASK_LOCATION_MESSAGE_PREFIX = 'Task location:';
+const TASK_LOCATION_MESSAGE_PREFIX = 'Gig location:';
 
 function buildTaskMapsUrl(task: Task) {
   const { latitude, longitude } = task.location;
@@ -58,7 +96,7 @@ function buildTaskMapsUrl(task: Task) {
 }
 
 function buildTaskLocationMessage(task: Task) {
-  return `${TASK_LOCATION_MESSAGE_PREFIX} ${buildTaskMapsUrl(task)}`;
+  return `${TASK_LOCATION_MESSAGE_PREFIX} ${task.location_label} ${buildTaskMapsUrl(task)}`;
 }
 
 function dedupeLocationMessages(items: Message[]) {
@@ -80,6 +118,10 @@ function dedupeLocationMessages(items: Message[]) {
   });
 }
 
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function GigProvider({ children }: PropsWithChildren) {
   const systemScheme = useColorScheme();
   const [profile, setProfile] = useState<Profile>(seededCurrentUser);
@@ -90,6 +132,14 @@ export function GigProvider({ children }: PropsWithChildren) {
   const [celebratedMatchId, setCelebratedMatchId] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<'light' | 'dark'>(systemScheme === 'light' ? 'light' : 'dark');
   const isDark = colorMode === 'dark';
+
+  const syncProfile = useCallback(
+    (nextProfile: Profile) => {
+      setProfile(nextProfile);
+      setProfiles((current) => current.map((item) => (item.id === nextProfile.id ? nextProfile : item)));
+    },
+    [],
+  );
 
   const requestCurrentLocation = useCallback(async () => {
     if (!hasSupabaseConfig) {
@@ -114,7 +164,7 @@ export function GigProvider({ children }: PropsWithChildren) {
         current.map((item) => (item.id === profile.id ? { ...item, location: coords } : item)),
       );
     } catch {
-      // The seeded Denver coordinate keeps the demo useful if location is unavailable.
+      // Seeded Rapid City coordinates keep the demo useful if location is unavailable.
     }
   }, [profile.id]);
 
@@ -150,6 +200,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       description: String(row.description),
       budget: Number(row.budget),
       category: String(row.category),
+      location_label: String(row.location_label ?? 'Rapid City area'),
       location: {
         latitude: Number(row.latitude ?? profile.location.latitude),
         longitude: Number(row.longitude ?? profile.location.longitude),
@@ -157,6 +208,10 @@ export function GigProvider({ children }: PropsWithChildren) {
       required_skills: Array.isArray(row.required_skills) ? (row.required_skills as string[]) : [],
       image_urls: Array.isArray(row.image_urls) ? (row.image_urls as string[]) : [],
       is_boosted: Boolean(row.is_boosted),
+      boost_days: Number(row.boost_days ?? 0),
+      boost_cost_bsts: Number(row.boost_cost_bsts ?? 0),
+      date_window: String(row.date_window ?? ''),
+      status: row.status === 'archived' ? 'archived' : 'open',
       created_at: String(row.created_at),
     }),
     [profile.location.latitude, profile.location.longitude],
@@ -168,6 +223,8 @@ export function GigProvider({ children }: PropsWithChildren) {
       task_id: String(row.task_id),
       doer_id: String(row.doer_id),
       bid_note: String(row.bid_note ?? ''),
+      counter_bid: Number(row.counter_bid ?? 0),
+      availability_window: String(row.availability_window ?? ''),
       is_unlocked: Boolean(row.is_unlocked),
       status: (row.status as GigMatch['status']) ?? 'pending',
       created_at: String(row.created_at ?? new Date().toISOString()),
@@ -213,7 +270,7 @@ export function GigProvider({ children }: PropsWithChildren) {
           user_lat: nextProfile.location.latitude,
           user_lng: nextProfile.location.longitude,
           radius_miles: nextProfile.search_radius,
-          user_skills: nextProfile.skills,
+          user_skills: nextProfile.interests,
         });
 
         if (Array.isArray(deckRows) && deckRows.length > 0) {
@@ -241,7 +298,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     }
 
     const channel = client
-      .channel('gigswipe-match-chat')
+      .channel('sidehustle-match-chat')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, (payload) => {
         const row = payload.new as Record<string, unknown> | null;
 
@@ -276,6 +333,10 @@ export function GigProvider({ children }: PropsWithChildren) {
   const enrichedMatches = useMemo(() => enrichMatches(matches, tasks, profiles), [matches, profiles, tasks]);
 
   async function createTask(input: CreateTaskInput) {
+    if (input.boost_cost_bsts > profile.credits) {
+      return false;
+    }
+
     const task: Task = {
       id: createUuid(),
       poster_id: profile.id,
@@ -283,14 +344,24 @@ export function GigProvider({ children }: PropsWithChildren) {
       description: input.description,
       budget: input.budget,
       category: input.category,
+      location_label: input.location_label,
       location: profile.location,
-      required_skills: input.required_skills,
+      required_skills: [input.category],
       image_urls: input.image_urls,
       is_boosted: input.is_boosted,
+      boost_days: input.boost_days,
+      boost_cost_bsts: input.boost_cost_bsts,
+      date_window: input.date_window,
+      status: 'open',
       created_at: new Date().toISOString(),
     };
 
     setTasks((current) => [task, ...current]);
+
+    if (input.boost_cost_bsts > 0) {
+      const nextProfile = { ...profile, credits: profile.credits - input.boost_cost_bsts };
+      syncProfile(nextProfile);
+    }
 
     if (supabase) {
       await supabase.from('tasks').insert({
@@ -300,20 +371,29 @@ export function GigProvider({ children }: PropsWithChildren) {
         description: task.description,
         budget: task.budget,
         category: task.category,
+        location_label: task.location_label,
         location: `SRID=4326;POINT(${task.location.longitude} ${task.location.latitude})`,
         required_skills: task.required_skills,
         image_urls: task.image_urls,
         is_boosted: task.is_boosted,
+        boost_days: task.boost_days,
+        boost_cost_bsts: task.boost_cost_bsts,
+        date_window: task.date_window,
+        status: task.status,
       });
     }
+
+    return true;
   }
 
-  async function submitBid(task: Task, bidNote: string) {
+  async function submitBid(task: Task, input: BidInput) {
     const match: GigMatch = {
       id: createUuid(),
       task_id: task.id,
       doer_id: profile.id,
-      bid_note: bidNote.trim(),
+      bid_note: input.bidNote.trim(),
+      counter_bid: input.counterBid,
+      availability_window: input.availabilityWindow.trim(),
       is_unlocked: false,
       status: 'pending',
       created_at: new Date().toISOString(),
@@ -327,6 +407,8 @@ export function GigProvider({ children }: PropsWithChildren) {
         task_id: task.id,
         doer_id: profile.id,
         bid_note: match.bid_note,
+        counter_bid: match.counter_bid,
+        availability_window: match.availability_window,
         is_unlocked: false,
         status: 'pending',
       });
@@ -335,12 +417,14 @@ export function GigProvider({ children }: PropsWithChildren) {
     return match;
   }
 
-  async function submitMatchedBid(task: Task, bidNote: string) {
+  async function submitMatchedBid(task: Task, input: BidInput) {
     const match: GigMatch = {
       id: createUuid(),
       task_id: task.id,
       doer_id: profile.id,
-      bid_note: bidNote.trim(),
+      bid_note: input.bidNote.trim(),
+      counter_bid: input.counterBid,
+      availability_window: input.availabilityWindow.trim(),
       is_unlocked: false,
       status: 'matched',
       created_at: new Date().toISOString(),
@@ -355,6 +439,8 @@ export function GigProvider({ children }: PropsWithChildren) {
         task_id: task.id,
         doer_id: profile.id,
         bid_note: match.bid_note,
+        counter_bid: match.counter_bid,
+        availability_window: match.availability_window,
         is_unlocked: false,
         status: 'matched',
       });
@@ -375,7 +461,7 @@ export function GigProvider({ children }: PropsWithChildren) {
   }
 
   async function unlockChat(matchId: string) {
-    if (profile.credits < 5) {
+    if (profile.credits < CHAT_UNLOCK_COST_BSTS) {
       return false;
     }
 
@@ -412,12 +498,9 @@ export function GigProvider({ children }: PropsWithChildren) {
       }
     }
 
-    setProfile((current) => ({ ...current, credits: current.credits - 5 }));
-    setProfiles((current) =>
-      current.map((item) => (item.id === profile.id ? { ...item, credits: item.credits - 5 } : item)),
-    );
+    syncProfile({ ...profile, credits: profile.credits - CHAT_UNLOCK_COST_BSTS });
     setMatches((current) =>
-      current.map((match) => (match.id === matchId ? { ...match, is_unlocked: true } : match)),
+      current.map((matchItem) => (matchItem.id === matchId ? { ...matchItem, is_unlocked: true } : matchItem)),
     );
 
     if (locationMessage) {
@@ -438,17 +521,43 @@ export function GigProvider({ children }: PropsWithChildren) {
 
   async function completeMatch(matchId: string) {
     const match = matches.find((item) => item.id === matchId);
+    const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
 
     setMatches((current) =>
       current.map((item) => (item.id === matchId ? { ...item, status: 'completed' } : item)),
     );
 
+    if (task) {
+      setTasks((current) =>
+        current.map((item) => (item.id === task.id ? { ...item, status: 'archived' } : item)),
+      );
+    }
+
     if (match) {
       setProfiles((current) =>
-        current.map((item) =>
-          item.id === match.doer_id ? { ...item, vouch_count: item.vouch_count + 1 } : item,
-        ),
+        current.map((item) => {
+          if (item.id === match.doer_id) {
+            return { ...item, vouch_count: item.vouch_count + 1 };
+          }
+
+          if (task && item.id === task.poster_id) {
+            return { ...item, posted_vouch_count: item.posted_vouch_count + 1 };
+          }
+
+          return item;
+        }),
       );
+      setProfile((current) => {
+        if (current.id === match.doer_id) {
+          return { ...current, vouch_count: current.vouch_count + 1 };
+        }
+
+        if (task && current.id === task.poster_id) {
+          return { ...current, posted_vouch_count: current.posted_vouch_count + 1 };
+        }
+
+        return current;
+      });
     }
 
     if (supabase) {
@@ -490,30 +599,119 @@ export function GigProvider({ children }: PropsWithChildren) {
       is_verified: true,
     };
 
-    setProfile(nextProfile);
-    setProfiles((current) => current.map((item) => (item.id === profile.id ? nextProfile : item)));
+    syncProfile(nextProfile);
 
     if (supabase) {
       await supabase.from('profiles').update({ avatar_url: avatarUri, is_verified: true }).eq('id', profile.id);
     }
   }
 
+  async function completeOnboarding(input: OnboardingInput) {
+    const shouldAwardSignup = !profile.signup_bonus_awarded;
+    const now = new Date().toISOString();
+    const nextProfile: Profile = {
+      ...profile,
+      username: input.username.trim(),
+      phone_number: input.phoneNumber.trim(),
+      birth_date: input.birthDate,
+      bio: input.bio.trim(),
+      education_level: input.educationLevel,
+      interests: input.interests,
+      skills: input.interests,
+      avatar_url: input.avatarUrl,
+      google_authenticated: true,
+      is_verified: Boolean(input.avatarUrl),
+      is_onboarded: true,
+      accepted_terms_at: now,
+      signup_bonus_awarded: true,
+      credits: profile.credits + (shouldAwardSignup ? SIGNUP_BONUS_BSTS : 0),
+    };
+
+    syncProfile(nextProfile);
+
+    if (supabase) {
+      await supabase.from('profiles').upsert({
+        id: nextProfile.id,
+        username: nextProfile.username,
+        avatar_url: nextProfile.avatar_url,
+        bio: nextProfile.bio,
+        skills: nextProfile.skills,
+        interests: nextProfile.interests,
+        credits: nextProfile.credits,
+        search_radius: nextProfile.search_radius,
+        is_verified: nextProfile.is_verified,
+        phone_number: nextProfile.phone_number,
+        birth_date: nextProfile.birth_date,
+        education_level: nextProfile.education_level,
+        accepted_terms_at: nextProfile.accepted_terms_at,
+      });
+    }
+  }
+
+  function buyBsts(amount: number) {
+    syncProfile({ ...profile, credits: profile.credits + amount });
+  }
+
+  function claimConsistencyReward() {
+    const claimedAt = profile.last_reward_claimed_at;
+
+    if (claimedAt?.slice(0, 10) === todayKey()) {
+      return null;
+    }
+
+    const nextDailyStreak = profile.daily_streak + 1;
+    const weeklyBonus = nextDailyStreak % 7 === 0;
+    const monthlyBonus = nextDailyStreak % 30 === 0;
+    const amount =
+      DAILY_REWARD_BSTS +
+      (weeklyBonus ? WEEKLY_STREAK_BONUS_BSTS : 0) +
+      (monthlyBonus ? MONTHLY_STREAK_BONUS_BSTS : 0);
+
+    syncProfile({
+      ...profile,
+      credits: profile.credits + amount,
+      daily_streak: nextDailyStreak,
+      weekly_streak: weeklyBonus ? profile.weekly_streak + 1 : profile.weekly_streak,
+      monthly_streak: monthlyBonus ? profile.monthly_streak + 1 : profile.monthly_streak,
+      last_reward_claimed_at: new Date().toISOString(),
+    });
+
+    return {
+      amount,
+      dailyStreak: nextDailyStreak,
+      weeklyBonus,
+      monthlyBonus,
+    };
+  }
+
   function updateRadius(radius: number) {
-    setProfile((current) => ({ ...current, search_radius: radius }));
-    setProfiles((current) =>
-      current.map((item) => (item.id === profile.id ? { ...item, search_radius: radius } : item)),
-    );
+    const nextRadius = Math.min(100, Math.max(1, Math.round(radius)));
+    const nextProfile = { ...profile, search_radius: nextRadius };
+    syncProfile(nextProfile);
+  }
+
+  function updateInterests(interests: string[]) {
+    const nextProfile = { ...profile, interests, skills: interests };
+    syncProfile(nextProfile);
   }
 
   function updateLocation(coords: Coordinates) {
-    setProfile((current) => ({ ...current, location: coords }));
-    setProfiles((current) =>
-      current.map((item) => (item.id === profile.id ? { ...item, location: coords } : item)),
-    );
+    const nextProfile = { ...profile, location: coords };
+    syncProfile(nextProfile);
   }
 
   function toggleColorMode() {
     setColorMode((current) => (current === 'dark' ? 'light' : 'dark'));
+  }
+
+  function logout() {
+    syncProfile({
+      ...profile,
+      is_onboarded: false,
+      google_authenticated: false,
+      accepted_terms_at: null,
+      phone_number: '',
+    });
   }
 
   const value: GigStoreValue = {
@@ -535,9 +733,14 @@ export function GigProvider({ children }: PropsWithChildren) {
     completeMatch,
     sendMessage,
     verifySelfie,
+    completeOnboarding,
+    buyBsts,
+    claimConsistencyReward,
     updateRadius,
+    updateInterests,
     updateLocation,
     toggleColorMode,
+    logout,
     clearCelebration: () => setCelebratedMatchId(null),
   };
 

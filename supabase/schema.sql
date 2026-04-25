@@ -6,6 +6,9 @@ begin
   if not exists (select 1 from pg_type where typname = 'match_status') then
     create type public.match_status as enum ('pending', 'matched', 'completed');
   end if;
+  if not exists (select 1 from pg_type where typname = 'task_status') then
+    create type public.task_status as enum ('open', 'archived');
+  end if;
 end $$;
 
 create table if not exists public.profiles (
@@ -14,11 +17,24 @@ create table if not exists public.profiles (
   avatar_url text,
   bio text not null default '',
   skills text[] not null default '{}',
+  interests text[] not null default '{}',
   credits int not null default 15 check (credits >= 0),
   location geography(point, 4326),
   search_radius int not null default 5 check (search_radius > 0),
   is_verified boolean not null default false,
+  is_onboarded boolean not null default false,
+  google_authenticated boolean not null default false,
+  phone_number text not null default '',
+  birth_date date,
+  education_level text,
+  accepted_terms_at timestamptz,
+  signup_bonus_awarded boolean not null default false,
+  daily_streak int not null default 0 check (daily_streak >= 0),
+  weekly_streak int not null default 0 check (weekly_streak >= 0),
+  monthly_streak int not null default 0 check (monthly_streak >= 0),
+  last_reward_claimed_at timestamptz,
   vouch_count int not null default 0 check (vouch_count >= 0),
+  posted_vouch_count int not null default 0 check (posted_vouch_count >= 0),
   rating double precision not null default 5.0 check (rating >= 0 and rating <= 5),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -31,10 +47,15 @@ create table if not exists public.tasks (
   description text not null,
   budget numeric(10, 2) not null check (budget > 0),
   category text not null,
+  location_label text not null default '',
   location geography(point, 4326) not null,
   required_skills text[] not null default '{}',
   image_urls text[] not null default '{}',
   is_boosted boolean not null default false,
+  boost_days int not null default 0 check (boost_days >= 0),
+  boost_cost_bsts int not null default 0 check (boost_cost_bsts >= 0),
+  date_window text not null default '',
+  status public.task_status not null default 'open',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -44,6 +65,8 @@ create table if not exists public.matches (
   task_id uuid not null references public.tasks (id) on delete cascade,
   doer_id uuid not null references public.profiles (id) on delete cascade,
   bid_note text not null,
+  counter_bid numeric(10, 2) not null default 0 check (counter_bid >= 0),
+  availability_window text not null default '',
   is_unlocked boolean not null default false,
   status public.match_status not null default 'pending',
   created_at timestamptz not null default now(),
@@ -59,9 +82,33 @@ create table if not exists public.messages (
   created_at timestamptz not null default now()
 );
 
+alter table public.profiles add column if not exists interests text[] not null default '{}';
+alter table public.profiles add column if not exists is_onboarded boolean not null default false;
+alter table public.profiles add column if not exists google_authenticated boolean not null default false;
+alter table public.profiles add column if not exists phone_number text not null default '';
+alter table public.profiles add column if not exists birth_date date;
+alter table public.profiles add column if not exists education_level text;
+alter table public.profiles add column if not exists accepted_terms_at timestamptz;
+alter table public.profiles add column if not exists signup_bonus_awarded boolean not null default false;
+alter table public.profiles add column if not exists daily_streak int not null default 0 check (daily_streak >= 0);
+alter table public.profiles add column if not exists weekly_streak int not null default 0 check (weekly_streak >= 0);
+alter table public.profiles add column if not exists monthly_streak int not null default 0 check (monthly_streak >= 0);
+alter table public.profiles add column if not exists last_reward_claimed_at timestamptz;
+alter table public.profiles add column if not exists posted_vouch_count int not null default 0 check (posted_vouch_count >= 0);
+
+alter table public.tasks add column if not exists location_label text not null default '';
+alter table public.tasks add column if not exists boost_days int not null default 0 check (boost_days >= 0);
+alter table public.tasks add column if not exists boost_cost_bsts int not null default 0 check (boost_cost_bsts >= 0);
+alter table public.tasks add column if not exists date_window text not null default '';
+alter table public.tasks add column if not exists status public.task_status not null default 'open';
+
+alter table public.matches add column if not exists counter_bid numeric(10, 2) not null default 0 check (counter_bid >= 0);
+alter table public.matches add column if not exists availability_window text not null default '';
+
 create index if not exists profiles_location_gix on public.profiles using gist (location);
 create index if not exists tasks_location_gix on public.tasks using gist (location);
 create index if not exists tasks_required_skills_gin on public.tasks using gin (required_skills);
+create index if not exists tasks_category_status_idx on public.tasks (status, category, created_at desc);
 create index if not exists tasks_boosted_idx on public.tasks (is_boosted, created_at desc);
 create index if not exists matches_task_idx on public.matches (task_id);
 create index if not exists matches_doer_idx on public.matches (doer_id, status);
@@ -106,11 +153,16 @@ returns table (
   description text,
   budget numeric,
   category text,
+  location_label text,
   latitude double precision,
   longitude double precision,
   required_skills text[],
   image_urls text[],
   is_boosted boolean,
+  boost_days int,
+  boost_cost_bsts int,
+  date_window text,
+  status public.task_status,
   created_at timestamptz,
   distance_miles double precision,
   skill_match_count int
@@ -125,15 +177,13 @@ as $$
     select
       t.*,
       st_distance(t.location, origin.geog) / 1609.344 as distance_miles,
-      (
-        select count(*)
-        from unnest(t.required_skills) required(skill)
-        where lower(required.skill) = any (
-          select lower(skill) from unnest(user_skills) skill
-        )
-      )::int as skill_match_count
+      case
+        when lower(t.category) = any (select lower(skill) from unnest(user_skills) skill) then 1
+        else 0
+      end as skill_match_count
     from public.tasks t, origin
     where st_dwithin(t.location, origin.geog, radius_miles * 1609.344)
+      and t.status = 'open'
   ),
   ranked as (
     select *
@@ -151,12 +201,17 @@ as $$
     title,
     description,
     budget,
-    category,
+      category,
+    location_label,
     st_y(location::geometry) as latitude,
     st_x(location::geometry) as longitude,
     required_skills,
     image_urls,
     is_boosted,
+    boost_days,
+    boost_cost_bsts,
+    date_window,
+    status,
     created_at,
     distance_miles,
     skill_match_count
@@ -201,7 +256,9 @@ begin
   with task_location_message as (
     select
       t.poster_id,
-      'Task location: https://www.google.com/maps/search/?api=1&query=' ||
+      'Gig location: ' ||
+        coalesce(nullif(t.location_label, ''), 'Shared area') ||
+        ' https://www.google.com/maps/search/?api=1&query=' ||
         round(st_y(t.location::geometry)::numeric, 6)::text ||
         ',' ||
         round(st_x(t.location::geometry)::numeric, 6)::text as content
@@ -245,6 +302,18 @@ begin
   update public.profiles
   set vouch_count = vouch_count + 1
   where id = completed_match.doer_id;
+
+  update public.profiles
+  set posted_vouch_count = posted_vouch_count + 1
+  where id = (
+    select poster_id
+    from public.tasks
+    where tasks.id = completed_match.task_id
+  );
+
+  update public.tasks
+  set status = 'archived'
+  where id = completed_match.task_id;
 
   return completed_match;
 end;
