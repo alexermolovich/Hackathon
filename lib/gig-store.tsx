@@ -60,6 +60,10 @@ type BidInput = {
   availabilityWindow: string;
 };
 
+type UpdateTaskInput = CreateTaskInput & {
+  status: Task['status'];
+};
+
 type OnboardingInput = {
   username: string;
   phoneNumber: string;
@@ -69,6 +73,24 @@ type OnboardingInput = {
   interests: string[];
   avatarUrl: string | null;
 };
+
+type ProfileUpdateInput = Partial<
+  Pick<
+    Profile,
+    | 'username'
+    | 'bio'
+    | 'skills'
+    | 'interests'
+    | 'google_authenticated'
+    | 'phone_number'
+    | 'phone_verified'
+    | 'birth_date'
+    | 'education_level'
+    | 'accepted_terms_at'
+    | 'avatar_url'
+    | 'is_verified'
+  >
+>;
 
 type StoreActionResult = {
   ok: boolean;
@@ -101,6 +123,7 @@ type GigStoreValue = {
   colorMode: 'light' | 'dark';
   celebratedMatchId: string | null;
   createTask: (input: CreateTaskInput) => Promise<boolean>;
+  updateTask: (taskId: string, input: UpdateTaskInput) => Promise<boolean>;
   submitBid: (task: Task, input: BidInput) => Promise<GigMatch>;
   submitMatchedBid: (task: Task, input: BidInput) => Promise<GigMatch>;
   likeBack: (matchId: string) => Promise<void>;
@@ -113,6 +136,7 @@ type GigStoreValue = {
   requestPhoneVerification: (phoneNumber: string) => Promise<PhoneActionResult>;
   confirmPhoneVerification: (phoneNumber: string, token: string) => Promise<PhoneActionResult>;
   completeOnboarding: (input: OnboardingInput) => Promise<void>;
+  updateProfileDetails: (input: ProfileUpdateInput) => Promise<void>;
   buyBsts: (amount: number) => void;
   claimConsistencyReward: () => RewardResult | null;
   updateRadius: (radius: number) => void;
@@ -542,6 +566,56 @@ export function GigProvider({ children }: PropsWithChildren) {
     return true;
   }
 
+  async function updateTask(taskId: string, input: UpdateTaskInput) {
+    const existingTask = tasks.find((item) => item.id === taskId);
+
+    if (!existingTask || existingTask.poster_id !== profile.id) {
+      return false;
+    }
+
+    const boostDelta = Math.max(0, input.boost_cost_bsts - existingTask.boost_cost_bsts);
+
+    if (boostDelta > profile.credits) {
+      return false;
+    }
+
+    const nextTask: Task = {
+      ...existingTask,
+      title: input.title,
+      description: input.description,
+      budget: input.budget,
+      category: input.category,
+      location_label: input.location_label,
+      required_skills: [input.category],
+      image_urls: input.image_urls,
+      is_boosted: input.is_boosted,
+      boost_days: input.is_boosted ? input.boost_days : 0,
+      boost_cost_bsts: input.is_boosted ? input.boost_cost_bsts : 0,
+      date_window: input.date_window,
+      status: input.status,
+    };
+
+    setTasks((current) => current.map((item) => (item.id === taskId ? nextTask : item)));
+
+    if (boostDelta > 0) {
+      syncProfile({ ...profile, credits: profile.credits - boostDelta });
+    }
+
+    if (firebaseDb) {
+      await setDoc(doc(firebaseDb, 'tasks', taskId), nextTask, { merge: true });
+
+      if (boostDelta > 0) {
+        await setDoc(
+          doc(firebaseDb, 'profiles', profile.id),
+          { credits: profile.credits - boostDelta },
+          { merge: true },
+        );
+      }
+    }
+
+    return true;
+  }
+
   async function submitBid(task: Task, input: BidInput) {
     const match: GigMatch = {
       id: createUuid(),
@@ -921,6 +995,20 @@ export function GigProvider({ children }: PropsWithChildren) {
     }
   }
 
+  async function updateProfileDetails(input: ProfileUpdateInput) {
+    const nextProfile = {
+      ...profile,
+      ...input,
+      skills: input.skills ?? input.interests ?? profile.skills,
+    };
+
+    syncProfile(nextProfile);
+
+    if (firebaseDb) {
+      await setDoc(doc(firebaseDb, 'profiles', profile.id), input, { merge: true });
+    }
+  }
+
   function buyBsts(amount: number) {
     syncProfile({ ...profile, credits: profile.credits + amount });
   }
@@ -1006,6 +1094,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     colorMode,
     celebratedMatchId,
     createTask,
+    updateTask,
     submitBid,
     submitMatchedBid,
     likeBack,
@@ -1018,6 +1107,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     requestPhoneVerification,
     confirmPhoneVerification,
     completeOnboarding,
+    updateProfileDetails,
     buyBsts,
     claimConsistencyReward,
     updateRadius,

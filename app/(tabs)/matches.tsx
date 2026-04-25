@@ -12,9 +12,11 @@ import { CreditBadge } from '@/components/credit-badge';
 import { MatchRevealCard } from '@/components/match-reveal-card';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
+import { ProfileTrigger } from '@/components/profile-trigger';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { gigHref } from '@/lib/routes';
 import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 export default function MatchesScreen() {
@@ -56,12 +58,7 @@ export default function MatchesScreen() {
           </View>
           <View className="flex-row items-center gap-2">
             <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setProfileOpen(true)}
-              className={`h-11 w-11 items-center justify-center rounded-full border ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
-              <Ionicons name="ellipsis-horizontal" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
-            </Pressable>
+            <ProfileTrigger onPress={() => setProfileOpen(true)} />
           </View>
         </View>
 
@@ -88,26 +85,26 @@ export default function MatchesScreen() {
 
         <SectionHeader title="Finished hustles" count={completed.length} icon="medal" />
         {completed.length === 0 ? (
-          <EmptyState copy="Completed gigs become Sweat Wins on your profile." />
+          <EmptyState copy="Completed gigs become Hustles Completed on your profile." />
         ) : (
           completed.map((match) => (
-            <View key={match.id} className="mb-3 flex-row items-center gap-3 rounded-[26px] border border-emerald-400/20 bg-emerald-500/10 p-4">
-              <Ionicons name="checkmark-circle" size={24} color="#34D399" />
-              <View className="flex-1">
-                <Text className={`font-black ${titleClass}`}>{match.task.title}</Text>
-                <Text className={`text-sm ${isDark ? 'text-emerald-100' : 'text-emerald-700'}`}>Sweat Win added</Text>
-              </View>
-            </View>
+            <Link key={match.id} href={gigHref(match.task.id)} asChild>
+              <Pressable accessibilityRole="button" className="mb-3 flex-row items-center gap-3 rounded-[26px] border border-emerald-400/20 bg-emerald-500/10 p-4">
+                <Ionicons name="checkmark-circle" size={24} color="#34D399" />
+                <View className="flex-1">
+                  <Text className={`font-black ${titleClass}`}>{match.task.title}</Text>
+                  <Text className={`text-sm ${isDark ? 'text-emerald-100' : 'text-emerald-700'}`}>Hustle completed</Text>
+                </View>
+              </Pressable>
+            </Link>
           ))
         )}
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={profileOpen} onRequestClose={() => setProfileOpen(false)}>
         <View className="flex-1 justify-end bg-black/60">
-          <View className={`max-h-[88%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-8">
-              <ProfilePanel />
-            </ScrollView>
+          <View className={`h-[88%] overflow-hidden rounded-t-[34px] border ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
+            <ProfilePanel onClose={() => setProfileOpen(false)} />
           </View>
         </View>
       </Modal>

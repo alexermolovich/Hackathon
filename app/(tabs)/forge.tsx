@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -9,26 +9,34 @@ import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
 import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
+import { ProfileTrigger } from '@/components/profile-trigger';
 import { TaskComposer } from '@/components/task-composer';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { gigHref } from '@/lib/routes';
 
 type ForgeView = 'applicants' | 'posted' | 'archived';
 type SortMode = 'bid' | 'date' | 'rating' | 'experience';
 
-const sortLabels: Record<SortMode, string> = {
-  bid: 'Bid',
-  date: 'Date',
-  rating: 'Rating',
-  experience: 'XP',
-};
+const sortOptions: {
+  caption: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  mode: SortMode;
+}[] = [
+  { caption: 'Lowest counter first', icon: 'cash', label: 'Price', mode: 'bid' },
+  { caption: 'Best availability', icon: 'calendar', label: 'Date', mode: 'date' },
+  { caption: 'Highest rated', icon: 'star', label: 'Rating', mode: 'rating' },
+  { caption: 'Most completed', icon: 'medal', label: 'Experience', mode: 'experience' },
+];
 
 export default function ForgeScreen() {
-  const { profile, tasks, matches, likeBack, isDark } = useGigStore();
+  const { profile, tasks, matches, likeBack, clearCelebration, isDark } = useGigStore();
   const [composerOpen, setComposerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [activeView, setActiveView] = useState<ForgeView>('applicants');
   const [sortMode, setSortMode] = useState<SortMode>('bid');
 
@@ -59,6 +67,23 @@ export default function ForgeScreen() {
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
 
+  function pickHustler(matchId: string) {
+    void likeBack(matchId);
+    clearCelebration();
+    router.push({ pathname: '/chat/[matchId]', params: { matchId } });
+  }
+
+  function confirmPick(match: EnrichedMatch) {
+    Alert.alert(
+      'Select this hustler?',
+      `Are you sure you want to select ${match.doer.username} for "${match.task.title}" at $${match.counter_bid}?`,
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes', onPress: () => void pickHustler(match.id) },
+      ],
+    );
+  }
+
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2">
@@ -69,12 +94,7 @@ export default function ForgeScreen() {
           </View>
           <View className="flex-row items-center gap-2">
             <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setProfileOpen(true)}
-              className={`h-11 w-11 items-center justify-center rounded-full border ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
-              <Ionicons name="ellipsis-horizontal" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
-            </Pressable>
+            <ProfileTrigger onPress={() => setProfileOpen(true)} />
           </View>
         </View>
 
@@ -96,27 +116,13 @@ export default function ForgeScreen() {
 
         {activeView === 'applicants' && (
           <View>
-            <View className="mb-4 flex-row flex-wrap gap-2">
-              {(Object.keys(sortLabels) as SortMode[]).map((mode) => (
-                <Pressable
-                  key={mode}
-                  accessibilityRole="button"
-                  onPress={() => setSortMode(mode)}
-                  className={`min-h-10 rounded-full border px-4 ${
-                    sortMode === mode ? 'border-violet bg-violet' : isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'
-                  }`}>
-                  <Text className={`py-2 text-sm font-black ${sortMode === mode || isDark ? 'text-white' : 'text-zinc-950'}`}>
-                    {sortLabels[mode]}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            <SortControl active={sortMode} onChange={setSortMode} />
 
             {applicantMatches.length === 0 ? (
               <EmptyState copy="Counter bids from hustlers land here after they swipe right on your gigs." />
             ) : (
               applicantMatches.map((match) => (
-                <ApplicantCard key={match.id} match={match} onPick={() => void likeBack(match.id)} />
+                <ApplicantCard key={match.id} match={match} onPick={() => confirmPick(match)} />
               ))
             )}
           </View>
@@ -127,7 +133,7 @@ export default function ForgeScreen() {
             {openTasks.length === 0 ? (
               <EmptyState copy="Open gigs you create will appear here." />
             ) : (
-              openTasks.map((task) => <PostedGigCard key={task.id} task={task} />)
+              openTasks.map((task) => <PostedGigCard key={task.id} task={task} onPress={() => setEditingTask(task)} />)
             )}
           </View>
         )}
@@ -146,23 +152,74 @@ export default function ForgeScreen() {
       <Modal transparent animationType="slide" visible={composerOpen} onRequestClose={() => setComposerOpen(false)}>
         <View className="flex-1 justify-end bg-black/60">
           <View className={`max-h-[90%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
-            <TaskComposer onCreated={() => setComposerOpen(false)} />
+            <TaskComposer onClose={() => setComposerOpen(false)} onCreated={() => setComposerOpen(false)} />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent animationType="slide" visible={Boolean(editingTask)} onRequestClose={() => setEditingTask(null)}>
+        <View className="flex-1 justify-end bg-black/60">
+          <View className={`max-h-[90%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
+            <TaskComposer onClose={() => setEditingTask(null)} task={editingTask} onSaved={() => setEditingTask(null)} />
           </View>
         </View>
       </Modal>
 
       <Modal transparent animationType="slide" visible={profileOpen} onRequestClose={() => setProfileOpen(false)}>
         <View className="flex-1 justify-end bg-black/60">
-          <View className={`max-h-[88%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-8">
-              <ProfilePanel />
-            </ScrollView>
+          <View className={`h-[88%] overflow-hidden rounded-t-[34px] border ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
+            <ProfilePanel onClose={() => setProfileOpen(false)} />
           </View>
         </View>
       </Modal>
 
       <BstPurchaseSheet visible={purchaseOpen} onClose={() => setPurchaseOpen(false)} />
     </SafeAreaView>
+  );
+}
+
+function SortControl({ active, onChange }: { active: SortMode; onChange: (mode: SortMode) => void }) {
+  const { isDark } = useGigStore();
+  const titleClass = isDark ? 'text-white' : 'text-zinc-950';
+  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+
+  return (
+    <View className={`mb-4 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+      <View className="mb-3 flex-row items-center justify-between">
+        <View>
+          <Text className={`text-base font-black ${titleClass}`}>Sort applicants</Text>
+          <Text className={`text-xs font-semibold ${mutedClass}`}>Choose how hustlers are ranked</Text>
+        </View>
+        <Ionicons name="swap-vertical" size={20} color="#8B5CF6" />
+      </View>
+      <View className="flex-row flex-wrap gap-2">
+        {sortOptions.map((option) => {
+          const selected = active === option.mode;
+
+          return (
+            <Pressable
+              key={option.mode}
+              accessibilityRole="button"
+              onPress={() => onChange(option.mode)}
+              className={`min-h-16 flex-1 basis-[47%] rounded-[20px] border p-3 ${
+                selected
+                  ? 'border-violet bg-violet'
+                  : isDark
+                    ? 'border-white/10 bg-white/10'
+                    : 'border-zinc-200 bg-zinc-100'
+              }`}>
+              <View className="mb-1 flex-row items-center gap-2">
+                <Ionicons name={option.icon} size={16} color={selected ? '#FFFFFF' : '#8B5CF6'} />
+                <Text className={`text-sm font-black ${selected || isDark ? 'text-white' : 'text-zinc-950'}`}>
+                  {option.label}
+                </Text>
+              </View>
+              <Text className={`text-xs font-semibold ${selected ? 'text-white/80' : mutedClass}`}>{option.caption}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -204,9 +261,9 @@ function ApplicantCard({ match, onPick }: { match: EnrichedMatch; onPick: () => 
             <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>{match.doer.username}</Text>
             <VerifiedBadge verified={match.doer.is_verified} compact />
           </View>
-          <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>{match.task.title}</Text>
+          <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>Ready to do: {match.task.title}</Text>
         </View>
-        <Ionicons name={match.status === 'matched' ? 'checkmark-circle' : 'person-add'} size={22} color="#10B981" />
+        {match.status === 'matched' ? <Ionicons name="checkmark-circle" size={22} color="#10B981" /> : null}
       </View>
 
       <View className="mb-4 flex-row gap-3">
@@ -215,7 +272,7 @@ function ApplicantCard({ match, onPick }: { match: EnrichedMatch; onPick: () => 
       </View>
       <View className="mb-4 flex-row gap-3">
         <Metric icon="star" label="Rating" value={match.doer.rating.toFixed(2)} />
-        <Metric icon="medal" label="Sweat Wins" value={match.doer.vouch_count.toString()} />
+        <Metric icon="medal" label="Hustles Completed" value={match.doer.vouch_count.toString()} />
       </View>
 
       <View className={`mb-4 rounded-[24px] p-4 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
@@ -246,14 +303,17 @@ function ApplicantCard({ match, onPick }: { match: EnrichedMatch; onPick: () => 
   return content;
 }
 
-function PostedGigCard({ task, archived = false }: { task: Task; archived?: boolean }) {
+function PostedGigCard({ task, archived = false, onPress }: { task: Task; archived?: boolean; onPress?: () => void }) {
   const { matches, isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const candidateCount = matches.filter((match) => match.task.id === task.id && match.status !== 'completed').length;
 
-  return (
-    <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+  const content = (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
       <View className="mb-4 flex-row items-start justify-between gap-3">
         <View className="flex-1">
           <Text className={`text-xl font-black ${titleClass}`} numberOfLines={2}>{task.title}</Text>
@@ -270,7 +330,17 @@ function PostedGigCard({ task, archived = false }: { task: Task; archived?: bool
         <Metric icon="cash" label="Budget" value={`$${task.budget}`} />
         <Metric icon="flame" label="Boost" value={task.is_boosted ? `${task.boost_days}d` : 'Off'} />
       </View>
-    </View>
+    </Pressable>
+  );
+
+  if (onPress) {
+    return content;
+  }
+
+  return (
+    <Link href={gigHref(task.id)} asChild>
+      {content}
+    </Link>
   );
 }
 

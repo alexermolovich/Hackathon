@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import '../global.css';
 import 'react-native-reanimated';
 
+import { AppAlertProvider } from '@/components/app-alert-provider';
 import { OnboardingScreen } from '@/components/onboarding-screen';
 import { GigProvider, useGigStore } from '@/lib/gig-store';
 
@@ -40,7 +41,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#000000' }}>
       <GigProvider>
-        <ThemedAppShell />
+        <AppAlertProvider>
+          <ThemedAppShell />
+        </AppAlertProvider>
       </GigProvider>
     </GestureHandlerRootView>
   );
@@ -59,6 +62,7 @@ function ThemedAppShell() {
       <Stack screenOptions={{ contentStyle: { backgroundColor }, headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[matchId]" />
+        <Stack.Screen name="gig/[taskId]" />
       </Stack>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </ThemeProvider>

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Modal, Pressable, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, Text, View } from 'react-native';
 import { useState } from 'react';
 
 import { PrimaryButton } from '@/components/primary-button';
@@ -27,9 +27,13 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
   const panelClass = isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white';
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
 
-  function handleBuy(amount: number) {
-    buyBsts(amount);
-    setRewardCopy(`Added ${amount} ${CURRENCY_NAME}.`);
+  function handleBuy(pack: (typeof BST_PACKAGES)[number]) {
+    buyBsts(pack.amount);
+    setRewardCopy(`Mock purchase complete: ${pack.label} added ${pack.amount} ${CURRENCY_NAME}.`);
+    Alert.alert(
+      'Mock purchase',
+      `Checkout is not connected yet. ${pack.label} (${pack.price}) was added for the demo.`,
+    );
   }
 
   function handleReward() {
@@ -92,7 +96,7 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
               <Pressable
                 key={pack.id}
                 accessibilityRole="button"
-                onPress={() => handleBuy(pack.amount)}
+                onPress={() => handleBuy(pack)}
                 className={`min-h-16 flex-row items-center justify-between rounded-[26px] border px-4 ${softClass}`}>
                 <View className="flex-row items-center gap-3">
                   <View className="h-10 w-10 items-center justify-center rounded-full bg-violet/20">
@@ -103,7 +107,10 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
                     <Text className={`text-sm ${mutedClass}`}>+{pack.amount} {CURRENCY_NAME}</Text>
                   </View>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={isDark ? '#FFFFFF' : '#18181B'} />
+                <View className="items-end">
+                  <Text className={`font-black ${titleClass}`}>{pack.price}</Text>
+                  <Text className={`text-xs font-bold ${mutedClass}`}>Mock buy</Text>
+                </View>
               </Pressable>
             ))}
           </View>

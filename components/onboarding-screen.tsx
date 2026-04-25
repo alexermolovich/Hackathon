@@ -250,7 +250,7 @@ export function OnboardingScreen() {
         interests,
         avatarUrl,
       });
-      router.replace('/create');
+      router.replace('/');
     } finally {
       setBusy(false);
     }

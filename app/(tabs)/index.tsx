@@ -13,6 +13,7 @@ import { CreditBadge } from '@/components/credit-badge';
 import { MatchRevealCard } from '@/components/match-reveal-card';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
+import { ProfileTrigger } from '@/components/profile-trigger';
 import { RadiusSlider } from '@/components/radius-slider';
 import { TaskCard } from '@/components/task-card';
 import type { Task } from '@/lib/gig-types';
@@ -127,38 +128,35 @@ export default function GigDeckScreen() {
 
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
-      <View className="flex-1 px-5 pb-4 pt-2">
-        <View className="mb-4 flex-row items-center justify-between">
-          <View>
-            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>Find gigs</Text>
+      <View className="flex-1">
+        <View className="absolute left-0 right-0 top-0 z-20 px-5 pt-2">
+          <View className="flex-row items-center justify-between">
+            <View>
+              <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
+              <Text className={`text-3xl font-black ${titleClass}`}>Find gigs</Text>
+            </View>
+            <View className="flex-row items-center gap-2">
+              <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
+              <ProfileTrigger onPress={() => setProfileOpen(true)} />
+            </View>
           </View>
-          <View className="flex-row items-center gap-2">
-            <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setProfileOpen(true)}
-              className={`h-11 w-11 items-center justify-center rounded-full border ${panelClass}`}>
-              <Ionicons name="ellipsis-horizontal" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
-            </Pressable>
-          </View>
-        </View>
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setSettingsOpen(true)}
-          className={`mb-4 flex-row items-center justify-between rounded-[28px] border px-4 py-3 ${panelClass}`}>
-          <View className="flex-1 flex-row items-center gap-2">
-            <Ionicons name="options" size={18} color="#8B5CF6" />
-            <Text className={`font-semibold ${titleClass}`} numberOfLines={1}>
-              {profile.search_radius} mi - {profile.interests.length} categories
-            </Text>
-          </View>
-          <View className="flex-row items-center gap-2">
-            <View className={`h-2 w-2 rounded-full ${isLiveMode ? 'bg-emerald' : 'bg-violet'}`} />
-            <Text className={`text-xs font-semibold ${mutedClass}`}>{isLiveMode ? 'Live' : 'Demo'}</Text>
-          </View>
-        </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setSettingsOpen(true)}
+            className={`mt-3 flex-row items-center justify-between rounded-[28px] border px-4 py-3 ${panelClass}`}>
+            <View className="flex-1 flex-row items-center gap-2">
+              <Ionicons name="options" size={18} color="#8B5CF6" />
+              <Text className={`font-semibold ${titleClass}`} numberOfLines={1}>
+                {profile.search_radius} mi - {profile.interests.length} categories
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-2">
+              <View className={`h-2 w-2 rounded-full ${isLiveMode ? 'bg-emerald' : 'bg-violet'}`} />
+              <Text className={`text-xs font-semibold ${mutedClass}`}>{isLiveMode ? 'Live' : 'Demo'}</Text>
+            </View>
+          </Pressable>
+        </View>
 
         <View className="flex-1">
           {hasVisibleCard ? (
@@ -206,7 +204,7 @@ export default function GigDeckScreen() {
               }}
             />
           ) : (
-            <View className={`flex-1 items-center justify-center rounded-[32px] border px-8 ${panelClass}`}>
+            <View className={`m-5 flex-1 items-center justify-center rounded-[32px] border px-8 ${panelClass}`}>
               <View className="mb-5 h-20 w-20 items-center justify-center rounded-full bg-violet/20">
                 <Ionicons name="briefcase" size={34} color="#C4B5FD" />
               </View>
@@ -216,21 +214,25 @@ export default function GigDeckScreen() {
           )}
         </View>
 
-        <View className="mt-5 h-20 items-center justify-center">
-          <View className="flex-row items-center gap-5">
+        <View pointerEvents="box-none" className="absolute bottom-6 left-0 right-0 z-20 items-center">
+          <View className="flex-row items-center gap-8">
             <Pressable
               accessibilityRole="button"
               disabled={!hasVisibleCard}
               onPress={handlePass}
-              className={`h-16 w-16 items-center justify-center rounded-full border ${panelClass} ${hasVisibleCard ? '' : 'opacity-40'}`}>
-              <Ionicons name="close" size={31} color="#F87171" />
+              className={`h-20 w-20 items-center justify-center rounded-full border-2 ${
+                isDark ? 'border-rose-300/60 bg-black/70' : 'border-rose-400 bg-white/90'
+              } ${hasVisibleCard ? '' : 'opacity-40'}`}>
+              <Ionicons name="close" size={38} color="#F87171" />
             </Pressable>
             <Pressable
               accessibilityRole="button"
               disabled={!hasVisibleCard}
               onPress={handleBid}
-              className={`h-20 w-20 items-center justify-center rounded-full bg-violet ${hasVisibleCard ? '' : 'opacity-40'}`}>
-              <Ionicons name="flame" size={34} color="#FFFFFF" />
+              className={`h-20 w-20 items-center justify-center rounded-full border-2 ${
+                isDark ? 'border-emerald-300/60 bg-black/70' : 'border-emerald-400 bg-white/90'
+              } ${hasVisibleCard ? '' : 'opacity-40'}`}>
+              <Ionicons name="heart" size={36} color="#34D399" />
             </Pressable>
           </View>
         </View>
@@ -324,10 +326,8 @@ export default function GigDeckScreen() {
 
       <Modal transparent animationType="slide" visible={profileOpen} onRequestClose={() => setProfileOpen(false)}>
         <View className="flex-1 justify-end bg-black/60">
-          <View className={`max-h-[88%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-8">
-              <ProfilePanel />
-            </ScrollView>
+          <View className={`h-[88%] overflow-hidden rounded-t-[34px] border ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
+            <ProfilePanel onClose={() => setProfileOpen(false)} />
           </View>
         </View>
       </Modal>

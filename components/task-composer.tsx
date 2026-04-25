@@ -1,32 +1,50 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useMemo, useState } from 'react';
+import * as Location from 'expo-location';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
+import { CategorySelector } from '@/components/category-selector';
 import { PrimaryButton } from '@/components/primary-button';
+import type { Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
-import { BOOST_COST_PER_DAY_BSTS, CURRENCY_NAME, POPULAR_CATEGORIES } from '@/lib/sidehustle-config';
+import { BOOST_COST_PER_DAY_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const boostDurations = [1, 3, 7];
+const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 type TaskComposerProps = {
+  onClose?: () => void;
   onCreated?: () => void;
+  onSaved?: () => void;
+  task?: Task | null;
 };
 
-export function TaskComposer({ onCreated }: TaskComposerProps) {
-  const { profile, createTask, isDark } = useGigStore();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [budget, setBudget] = useState('');
-  const [category, setCategory] = useState('');
-  const [locationLabel, setLocationLabel] = useState('');
-  const [dateWindow, setDateWindow] = useState('');
-  const [isBoosted, setIsBoosted] = useState(false);
-  const [boostDays, setBoostDays] = useState(3);
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
+export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposerProps) {
+  const { profile, createTask, updateTask, isDark } = useGigStore();
+  const isEditing = Boolean(task);
+  const defaultLocationLabel = useMemo(
+    () => fallbackLocationLabel(profile.location.latitude, profile.location.longitude),
+    [profile.location.latitude, profile.location.longitude],
+  );
+  const [title, setTitle] = useState(task?.title ?? '');
+  const [description, setDescription] = useState(task?.description ?? '');
+  const [budget, setBudget] = useState(task ? String(task.budget) : '');
+  const [category, setCategory] = useState(task?.category ?? '');
+  const [locationLabel, setLocationLabel] = useState(task?.location_label ?? defaultLocationLabel);
+  const [dateWindow, setDateWindow] = useState(task?.date_window ?? '');
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [rangeStart, setRangeStart] = useState<Date | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
+  const [visibleMonth, setVisibleMonth] = useState(startOfMonth(new Date()));
+  const [status, setStatus] = useState<Task['status']>(task?.status ?? 'open');
+  const [isBoosted, setIsBoosted] = useState(task?.is_boosted ?? false);
+  const [boostDays, setBoostDays] = useState(task?.boost_days || 3);
+  const [imageUrls, setImageUrls] = useState<string[]>(task?.image_urls ?? []);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
 
   const boostCost = useMemo(
@@ -51,6 +69,52 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
       imageUrls.length > 0,
   );
 
+  useEffect(() => {
+    if (!task) {
+      return;
+    }
+
+    setTitle(task.title);
+    setDescription(task.description);
+    setBudget(String(task.budget));
+    setCategory(task.category);
+    setLocationLabel(task.location_label);
+    setDateWindow(task.date_window);
+    setStatus(task.status);
+    setIsBoosted(task.is_boosted);
+    setBoostDays(task.boost_days || 3);
+    setImageUrls(task.image_urls);
+  }, [task]);
+
+  useEffect(() => {
+    if (task) {
+      return;
+    }
+
+    let active = true;
+    setLocationLabel(defaultLocationLabel);
+
+    void Location.reverseGeocodeAsync(profile.location)
+      .then((results) => {
+        if (!active || !results[0]) {
+          return;
+        }
+
+        const nextLabel = formatGeocodedLabel(results[0]);
+
+        if (nextLabel) {
+          setLocationLabel(nextLabel);
+        }
+      })
+      .catch(() => {
+        // The coordinate fallback is enough for posting if reverse geocoding is unavailable.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [defaultLocationLabel, profile.location, task]);
+
   async function pickImages() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
@@ -73,13 +137,42 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
     setImageUrls((current) => [...current, ...result.assets.map((asset) => asset.uri)].slice(0, 4));
   }
 
-  async function submitTask() {
-    if (!canPublish) {
-      Alert.alert('Missing details', 'Add a title, description, category, location, image, and realistic budget.');
+  function removeImage(uri: string) {
+    setImageUrls((current) => current.filter((item) => item !== uri));
+  }
+
+  function selectDate(day: Date) {
+    const selected = startOfDay(day);
+
+    if (!rangeStart || rangeEnd) {
+      setRangeStart(selected);
+      setRangeEnd(null);
+      setDateWindow(formatDateLabel(selected));
       return;
     }
 
-    const created = await createTask({
+    if (selected.getTime() < rangeStart.getTime()) {
+      setRangeStart(selected);
+      setRangeEnd(null);
+      setDateWindow(formatDateLabel(selected));
+      return;
+    }
+
+    setRangeEnd(selected);
+    setDateWindow(formatDateRange(rangeStart, selected));
+  }
+
+  function updateCategorySelection(selected: string[]) {
+    setCategory(selected[selected.length - 1] ?? '');
+  }
+
+  async function submitTask() {
+    if (!canPublish) {
+      Alert.alert('Missing details', 'Add a title, description, category, image, and realistic budget.');
+      return;
+    }
+
+    const input = {
       title: title.trim(),
       description: description.trim(),
       budget: parsedBudget,
@@ -90,24 +183,72 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
       boost_days: isBoosted ? boostDays : 0,
       boost_cost_bsts: boostCost,
       image_urls: imageUrls,
-    });
+    };
 
-    if (!created) {
+    const saved = task
+      ? await updateTask(task.id, {
+          ...input,
+          status,
+        })
+      : await createTask(input);
+
+    if (!saved) {
       setPurchaseOpen(true);
       return;
     }
 
-    Alert.alert('Gig posted', isBoosted ? `Boosted for ${boostDays} day${boostDays === 1 ? '' : 's'}.` : 'Your gig is live.');
+    Alert.alert(
+      isEditing ? 'Gig updated' : 'Gig posted',
+      isBoosted ? `Boosted for ${boostDays} day${boostDays === 1 ? '' : 's'}.` : 'Your gig is live.',
+    );
+    onSaved?.();
     onCreated?.();
   }
 
   return (
     <>
-      <ScrollView contentContainerClassName="pb-8" showsVerticalScrollIndicator={false}>
-        <View className="mb-6">
-          <Text className="text-sm font-semibold text-orange-400">Gig starter mode</Text>
-          <Text className={`text-3xl font-black ${titleClass}`}>Post a gig</Text>
+      <View className={`z-10 border-b pb-4 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
+        <View className="flex-row items-center justify-between">
+          <View>
+            <Text className="text-sm font-semibold text-orange-400">Gig starter mode</Text>
+            <Text className={`text-3xl font-black ${titleClass}`}>{isEditing ? 'Edit gig' : 'Post a gig'}</Text>
+          </View>
+          {onClose ? (
+            <Pressable
+              accessibilityLabel="Close gig composer"
+              accessibilityRole="button"
+              onPress={onClose}
+              className={`h-11 w-11 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-white'}`}>
+              <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
+            </Pressable>
+          ) : null}
         </View>
+      </View>
+
+      <ScrollView contentContainerClassName="pb-8 pt-5" showsVerticalScrollIndicator={false}>
+        {isEditing && (
+          <Field label="Status" labelClass={labelClass}>
+            <View className="flex-row gap-2">
+              {(['open', 'archived'] as const).map((nextStatus) => {
+                const selected = status === nextStatus;
+
+                return (
+                  <Pressable
+                    key={nextStatus}
+                    accessibilityRole="button"
+                    onPress={() => setStatus(nextStatus)}
+                    className={`min-h-12 flex-1 items-center justify-center rounded-full border ${
+                      selected ? 'border-violet bg-violet' : softClass
+                    }`}>
+                    <Text className={`font-black capitalize ${selected || isDark ? 'text-white' : 'text-zinc-950'}`}>
+                      {nextStatus}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Field>
+        )}
 
         <Field label="Title" labelClass={labelClass}>
           <TextInput
@@ -146,8 +287,15 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
             {imageUrls.length > 0 && (
               <View className="flex-row flex-wrap gap-2">
                 {imageUrls.map((uri) => (
-                  <View key={uri} className="overflow-hidden rounded-[18px]">
+                  <View key={uri} className="relative overflow-hidden rounded-[18px]">
                     <Image source={{ uri }} style={{ height: 76, width: 76 }} contentFit="cover" />
+                    <Pressable
+                      accessibilityLabel="Remove image"
+                      accessibilityRole="button"
+                      onPress={() => removeImage(uri)}
+                      className="absolute right-1 top-1 h-7 w-7 items-center justify-center rounded-full bg-black/70">
+                      <Ionicons name="close" size={16} color="#FFFFFF" />
+                    </Pressable>
                   </View>
                 ))}
               </View>
@@ -155,35 +303,32 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
           </View>
         </Field>
 
-        <View className="mb-5 flex-row gap-3">
-          <View className="flex-1">
-            <Text className={`mb-2 text-sm font-bold ${labelClass}`}>Budget</Text>
-            <View className={`flex-row items-center rounded-[24px] border px-4 ${softClass}`}>
-              <Text className={`text-xl font-black ${titleClass}`}>$</Text>
-              <TextInput
-                value={budget}
-                onChangeText={setBudget}
-                keyboardType="numeric"
-                className={`flex-1 py-4 text-xl font-black ${titleClass}`}
-              />
-            </View>
+        <Field label="Budget" labelClass={labelClass}>
+          <View className={`flex-row items-center rounded-[24px] border px-4 ${softClass}`}>
+            <Text className={`text-xl font-black ${titleClass}`}>$</Text>
+            <TextInput
+              value={budget}
+              onChangeText={setBudget}
+              keyboardType="numeric"
+              className={`min-w-0 flex-1 py-4 text-xl font-black ${titleClass}`}
+            />
           </View>
-          <View className="flex-1">
-            <Text className={`mb-2 text-sm font-bold ${labelClass}`}>Boost</Text>
-            <View className={`min-h-14 flex-row items-center justify-between rounded-[24px] border px-4 ${softClass}`}>
-              <View className="flex-row items-center gap-2">
-                <Ionicons name="flame" size={18} color="#F97316" />
-                <Text className={`text-sm font-bold ${titleClass}`}>{boostCost} {CURRENCY_NAME}</Text>
-              </View>
-              <Switch
-                value={isBoosted}
-                onValueChange={setIsBoosted}
-                thumbColor="#FFFFFF"
-                trackColor={{ false: '#A1A1AA', true: '#F97316' }}
-              />
+        </Field>
+
+        <Field label="Boost" labelClass={labelClass}>
+          <View className={`min-h-14 flex-row items-center justify-between rounded-[24px] border px-4 ${softClass}`}>
+            <View className="flex-row items-center gap-2">
+              <Ionicons name="flame" size={18} color="#F97316" />
+              <Text className={`text-sm font-bold ${titleClass}`}>{boostCost} {CURRENCY_NAME}</Text>
             </View>
+            <Switch
+              value={isBoosted}
+              onValueChange={setIsBoosted}
+              thumbColor="#FFFFFF"
+              trackColor={{ false: '#A1A1AA', true: '#F97316' }}
+            />
           </View>
-        </View>
+        </Field>
 
         {isBoosted && (
           <Field label="Boost duration" labelClass={labelClass}>
@@ -209,54 +354,46 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
             <Text className={`mt-2 text-xs font-semibold ${mutedClass}`}>
               Posting is free. Boosting spends {BOOST_COST_PER_DAY_BSTS} {CURRENCY_NAME} per day.
             </Text>
+            <View className={`mt-3 rounded-[22px] border p-4 ${softClass}`}>
+              <Text className={`text-sm font-bold ${mutedClass}`}>BSTs available</Text>
+              <Text className={`text-2xl font-black ${titleClass}`}>{profile.credits} {CURRENCY_NAME}</Text>
+            </View>
           </Field>
         )}
 
         <Field label="Category" labelClass={labelClass}>
-          <View className="flex-row flex-wrap gap-2">
-            {POPULAR_CATEGORIES.map((item) => (
-              <PrimaryButton
-                key={item}
-                label={item}
-                tone={item === category ? 'violet' : 'ghost'}
-                onPress={() => setCategory(item)}
-                style={{ minHeight: 42, paddingHorizontal: 14 }}
-              />
-            ))}
-          </View>
+          <CategorySelector selected={category ? [category] : []} onChange={updateCategorySelection} minSelected={1} />
         </Field>
 
-        <Field label="General location" labelClass={labelClass}>
-          <TextInput
-            value={locationLabel}
-            onChangeText={setLocationLabel}
-            placeholder="City, neighborhood, or general area"
-            placeholderTextColor="#71717A"
-            className={`${inputClass} font-semibold`}
-          />
+        <Field label="Start and end dates" labelClass={labelClass}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setCalendarOpen((current) => !current)}
+            className={`min-h-14 flex-row items-center justify-between rounded-[24px] border px-4 ${softClass}`}>
+            <Text className={`flex-1 font-semibold ${dateWindow ? titleClass : mutedClass}`} numberOfLines={1}>
+              {dateWindow || 'Choose a date range'}
+            </Text>
+            <Ionicons name={calendarOpen ? 'chevron-up' : 'calendar'} size={20} color="#8B5CF6" />
+          </Pressable>
+          {calendarOpen ? (
+            <CalendarRangePicker
+              isDark={isDark}
+              onChangeMonth={(offset) => setVisibleMonth((current) => addMonths(current, offset))}
+              onDone={() => setCalendarOpen(false)}
+              onSelect={selectDate}
+              rangeEnd={rangeEnd}
+              rangeStart={rangeStart}
+              visibleMonth={visibleMonth}
+            />
+          ) : null}
         </Field>
 
-        <Field label="Date range" labelClass={labelClass}>
-          <TextInput
-            value={dateWindow}
-            onChangeText={setDateWindow}
-            placeholder="Optional"
-            placeholderTextColor="#71717A"
-            className={`${inputClass} font-semibold`}
-          />
-        </Field>
-
-        <View className={`mb-6 rounded-[26px] border p-4 ${softClass}`}>
-          <View className="flex-row items-center justify-between">
-            <View>
-              <Text className={`text-sm font-bold ${mutedClass}`}>Balance</Text>
-              <Text className={`text-2xl font-black ${titleClass}`}>{profile.credits} {CURRENCY_NAME}</Text>
-            </View>
-            <Ionicons name="flame" size={28} color="#F97316" />
-          </View>
-        </View>
-
-        <PrimaryButton label="Publish Gig" icon="rocket" onPress={() => void submitTask()} disabled={!canPublish} />
+        <PrimaryButton
+          label={isEditing ? 'Save Gig' : 'Publish Gig'}
+          icon={isEditing ? 'save' : 'rocket'}
+          onPress={() => void submitTask()}
+          disabled={!canPublish}
+        />
       </ScrollView>
 
       <BstPurchaseSheet
@@ -265,6 +402,98 @@ export function TaskComposer({ onCreated }: TaskComposerProps) {
         onClose={() => setPurchaseOpen(false)}
       />
     </>
+  );
+}
+
+function CalendarRangePicker({
+  isDark,
+  onChangeMonth,
+  onDone,
+  onSelect,
+  rangeEnd,
+  rangeStart,
+  visibleMonth,
+}: {
+  isDark: boolean;
+  onChangeMonth: (offset: number) => void;
+  onDone: () => void;
+  onSelect: (day: Date) => void;
+  rangeEnd: Date | null;
+  rangeStart: Date | null;
+  visibleMonth: Date;
+}) {
+  const titleClass = isDark ? 'text-white' : 'text-zinc-950';
+  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+  const cells = buildCalendarCells(visibleMonth);
+
+  return (
+    <View className={`mt-3 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+      <View className="mb-4 flex-row items-center justify-between">
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onChangeMonth(-1)}
+          className={`h-10 w-10 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+          <Ionicons name="chevron-back" size={20} color={isDark ? '#FFFFFF' : '#18181B'} />
+        </Pressable>
+        <Text className={`text-lg font-black ${titleClass}`}>
+          {monthNames[visibleMonth.getMonth()]} {visibleMonth.getFullYear()}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onChangeMonth(1)}
+          className={`h-10 w-10 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+          <Ionicons name="chevron-forward" size={20} color={isDark ? '#FFFFFF' : '#18181B'} />
+        </Pressable>
+      </View>
+
+      <View className="mb-2 flex-row">
+        {weekdayLabels.map((label, index) => (
+          <Text key={`${label}-${index}`} className={`flex-1 text-center text-xs font-black ${mutedClass}`}>
+            {label}
+          </Text>
+        ))}
+      </View>
+
+      <View className="flex-row flex-wrap">
+        {cells.map((day, index) => {
+          if (!day) {
+            return <View key={`blank-${index}`} style={{ width: `${100 / 7}%`, aspectRatio: 1 }} />;
+          }
+
+          const selected = sameDay(day, rangeStart) || sameDay(day, rangeEnd);
+          const inRange = isInRange(day, rangeStart, rangeEnd);
+
+          return (
+            <View key={day.toISOString()} className="p-0.5" style={{ width: `${100 / 7}%`, aspectRatio: 1 }}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => onSelect(day)}
+                className={`h-full items-center justify-center rounded-2xl ${
+                  selected ? 'bg-violet' : inRange ? 'bg-violet/20' : isDark ? 'bg-white/5' : 'bg-zinc-100'
+                }`}>
+                <Text className={`font-black ${selected ? 'text-white' : titleClass}`}>{day.getDate()}</Text>
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+
+      <Text className={`mt-3 text-center text-xs font-semibold ${mutedClass}`}>
+        {rangeStart && rangeEnd
+          ? `${durationDays(rangeStart, rangeEnd)} day${durationDays(rangeStart, rangeEnd) === 1 ? '' : 's'} selected`
+          : rangeStart
+            ? 'Choose an end date'
+            : 'Choose a start date'}
+      </Text>
+      {rangeStart && rangeEnd ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={onDone}
+          className="mt-3 min-h-11 items-center justify-center rounded-full bg-violet px-5">
+          <Text className="text-sm font-black text-white">Done</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -283,4 +512,69 @@ function Field({
       {children}
     </View>
   );
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, offset: number) {
+  return new Date(date.getFullYear(), date.getMonth() + offset, 1);
+}
+
+function buildCalendarCells(month: Date) {
+  const firstDay = startOfMonth(month);
+  const daysInMonth = new Date(firstDay.getFullYear(), firstDay.getMonth() + 1, 0).getDate();
+  const cells: (Date | null)[] = Array.from({ length: firstDay.getDay() }, () => null);
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push(new Date(firstDay.getFullYear(), firstDay.getMonth(), day));
+  }
+
+  while (cells.length % 7 !== 0) {
+    cells.push(null);
+  }
+
+  return cells;
+}
+
+function sameDay(left: Date | null, right: Date | null) {
+  return Boolean(
+    left &&
+      right &&
+      left.getFullYear() === right.getFullYear() &&
+      left.getMonth() === right.getMonth() &&
+      left.getDate() === right.getDate(),
+  );
+}
+
+function isInRange(day: Date, start: Date | null, end: Date | null) {
+  return Boolean(start && end && day.getTime() > start.getTime() && day.getTime() < end.getTime());
+}
+
+function durationDays(start: Date, end: Date) {
+  return Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+}
+
+function formatDateLabel(date: Date) {
+  return `${monthNames[date.getMonth()]} ${date.getDate()}`;
+}
+
+function formatDateRange(start: Date, end: Date) {
+  const suffix = start.getFullYear() === end.getFullYear() ? '' : `, ${end.getFullYear()}`;
+  return `${formatDateLabel(start)} - ${formatDateLabel(end)}${suffix}`;
+}
+
+function fallbackLocationLabel(latitude: number, longitude: number) {
+  return `Near ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
+}
+
+function formatGeocodedLabel(place: Location.LocationGeocodedAddress) {
+  const parts = [place.district, place.city, place.region].filter(Boolean);
+  const uniqueParts = parts.filter((part, index) => parts.indexOf(part) === index);
+  return uniqueParts.slice(0, 2).join(', ');
 }
