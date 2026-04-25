@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Swiper from 'react-native-deck-swiper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -51,13 +51,30 @@ export default function GigDeckScreen() {
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const panelClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white';
+  const deckSignature = useMemo(() => deck.map((task) => task.id).join('|'), [deck]);
+  const hasVisibleCard = activeCardIndex < deck.length;
+  const emptyTitle = deck.length === 0 ? 'No gigs in range' : "You're all caught up";
+  const emptyMessage =
+    deck.length === 0 ? 'Adjust proximity or categories to open up the deck.' : 'Check back soon or widen your filters for more gigs.';
+
+  useEffect(() => {
+    setActiveCardIndex(0);
+  }, [deckSignature]);
 
   function handlePass() {
+    if (!hasVisibleCard) {
+      return;
+    }
+
     void Haptics.selectionAsync();
     swiperRef.current?.swipeLeft();
   }
 
   function handleBid() {
+    if (!hasVisibleCard) {
+      return;
+    }
+
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     swiperRef.current?.swipeRight();
   }
@@ -144,11 +161,16 @@ export default function GigDeckScreen() {
         </Pressable>
 
         <View className="flex-1">
-          {deck.length > 0 ? (
+          {hasVisibleCard ? (
             <Swiper
+              key={deckSignature}
               ref={swiperRef}
               cards={deck}
-              renderCard={(task) => {
+              renderCard={(task?: Task) => {
+                if (!task) {
+                  return null;
+                }
+
                 const poster = postersById.get(task.poster_id) ?? profile;
 
                 return <TaskCard task={task} currentUser={profile} poster={poster} />;
@@ -188,10 +210,8 @@ export default function GigDeckScreen() {
               <View className="mb-5 h-20 w-20 items-center justify-center rounded-full bg-violet/20">
                 <Ionicons name="briefcase" size={34} color="#C4B5FD" />
               </View>
-              <Text className={`mb-2 text-center text-3xl font-black ${titleClass}`}>No gigs in range</Text>
-              <Text className={`text-center text-base leading-6 ${mutedClass}`}>
-                Adjust proximity or categories to open up the deck.
-              </Text>
+              <Text className={`mb-2 text-center text-3xl font-black ${titleClass}`}>{emptyTitle}</Text>
+              <Text className={`text-center text-base leading-6 ${mutedClass}`}>{emptyMessage}</Text>
             </View>
           )}
         </View>
@@ -200,14 +220,16 @@ export default function GigDeckScreen() {
           <View className="flex-row items-center gap-5">
             <Pressable
               accessibilityRole="button"
+              disabled={!hasVisibleCard}
               onPress={handlePass}
-              className={`h-16 w-16 items-center justify-center rounded-full border ${panelClass}`}>
+              className={`h-16 w-16 items-center justify-center rounded-full border ${panelClass} ${hasVisibleCard ? '' : 'opacity-40'}`}>
               <Ionicons name="close" size={31} color="#F87171" />
             </Pressable>
             <Pressable
               accessibilityRole="button"
+              disabled={!hasVisibleCard}
               onPress={handleBid}
-              className="h-20 w-20 items-center justify-center rounded-full bg-violet">
+              className={`h-20 w-20 items-center justify-center rounded-full bg-violet ${hasVisibleCard ? '' : 'opacity-40'}`}>
               <Ionicons name="flame" size={34} color="#FFFFFF" />
             </Pressable>
           </View>
