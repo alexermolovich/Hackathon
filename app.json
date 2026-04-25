@@ -1,19 +1,19 @@
 {
   "expo": {
-    "name": "hackathon",
-    "slug": "hackathon",
+    "name": "GigSwipe",
+    "slug": "gigswipe",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "hackathon",
-    "userInterfaceStyle": "automatic",
+    "scheme": "gigswipe",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -27,6 +27,18 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "GigSwipe uses your location to show nearby gigs within your selected radius."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GigSwipe uses a selfie image to mock identity verification."
+        }
+      ],
       [
         "expo-splash-screen",
         {
