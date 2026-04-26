@@ -325,26 +325,27 @@ export function OnboardingScreen() {
                   <View className="absolute bg-orange-400" style={styles.welcomeSlashOne} />
                   <View className="absolute bg-violet" style={styles.welcomeSlashTwo} />
 
-                  <View className="relative z-10 flex-1 px-5 py-7">
-                    <View className="items-center">
+                  <View className="relative z-10 flex-1">
+                    <View style={styles.welcomeLogoAnchor}>
                       <View className="h-20 w-20 items-center justify-center overflow-hidden rounded-[24px] bg-transparent">
                         <Image source={homeLogoSource} style={{ height: 78, width: 78 }} contentFit="contain" />
                       </View>
-                      <View className="mt-3 flex-row justify-center">
-                        {Array.from(APP_NAME).map((character, index) => (
-                          <Text
-                            key={`${character}-${index}`}
-                            style={[styles.brandLetter, { color: brandGradientColors[index] }]}>
-                            {character}
-                          </Text>
-                        ))}
-                      </View>
                     </View>
 
-                    <View className="flex-1 items-center justify-center pb-4">
-                      <Text className="text-center text-[42px] font-black leading-[46px] text-orange-500">Swipe.</Text>
-                      <Text className={`text-center text-[42px] font-black leading-[46px] ${titleClass}`}>Earn.</Text>
-                      <Text className="text-center text-[42px] font-black leading-[46px] text-violet">Repeat.</Text>
+                    <View className="flex-row justify-center" style={styles.welcomeBrandCenter}>
+                      {Array.from(APP_NAME).map((character, index) => (
+                        <Text
+                          key={`${character}-${index}`}
+                          style={[styles.brandLetter, { color: brandGradientColors[index] }]}>
+                          {character}
+                        </Text>
+                      ))}
+                    </View>
+
+                    <View className="items-end" style={styles.welcomeSloganRight}>
+                      <Text className="text-right text-[42px] font-black leading-[46px] text-orange-500">Swipe.</Text>
+                      <Text className={`text-right text-[42px] font-black leading-[46px] ${titleClass}`}>Earn.</Text>
+                      <Text className="text-right text-[42px] font-black leading-[46px] text-violet">Repeat.</Text>
                     </View>
                   </View>
                 </View>
@@ -755,6 +756,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 52,
   },
+  welcomeBrandCenter: {
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 158,
+  },
+  welcomeLogoAnchor: {
+    left: 20,
+    position: 'absolute',
+    top: 26,
+  },
   welcomeOrangeShape: {
     borderRadius: 150,
     bottom: -176,
@@ -793,5 +805,10 @@ const styles = StyleSheet.create({
     top: 110,
     transform: [{ rotate: '-18deg' }],
     width: 132,
+  },
+  welcomeSloganRight: {
+    position: 'absolute',
+    right: 0,
+    top: 238,
   },
 });
