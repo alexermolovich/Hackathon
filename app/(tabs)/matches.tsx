@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
-import { Link } from 'expo-router';
-import { useState } from 'react';
+import { Link, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -16,6 +16,7 @@ import { StarRating } from '@/components/star-rating';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { getTaskCategoryLabels, getUnreadMessageCount, hasUnseenAcceptedOffer } from '@/lib/gig-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { gigHref } from '@/lib/routes';
 import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
@@ -24,9 +25,11 @@ export default function MatchesScreen() {
   const {
     profile,
     matches,
+    messages,
     unlockChat,
-    completeMatch,
+    requestMatchCompletion,
     rateMatch,
+    markAcceptedOffersSeen,
     isDark,
   } = useGigStore();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -35,6 +38,10 @@ export default function MatchesScreen() {
   const readyHustles = matches.filter((match) => match.doer_id === profile.id && match.status === 'matched');
   const pendingBids = matches.filter((match) => match.doer_id === profile.id && match.status === 'pending');
   const completed = matches.filter((match) => match.doer_id === profile.id && match.status === 'completed');
+  const unseenAcceptedIds = useMemo(
+    () => readyHustles.filter((match) => hasUnseenAcceptedOffer(match, profile.id)).map((match) => match.id),
+    [readyHustles, profile.id],
+  );
 
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
@@ -47,6 +54,17 @@ export default function MatchesScreen() {
     }
   }
 
+  function confirmUnlock(match: EnrichedMatch) {
+    Alert.alert(
+      'Unlock this hustle?',
+      `Spend ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME} to reveal the gig starter and open chat for "${match.task.title}"?`,
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes', onPress: () => void handleUnlock(match.id) },
+      ],
+    );
+  }
+
   async function handleRate(matchId: string, rating: number) {
     const ok = await rateMatch(matchId, rating);
 
@@ -54,6 +72,25 @@ export default function MatchesScreen() {
       Alert.alert('Rating not saved', 'Only completed hustles can be rated.');
     }
   }
+
+  function confirmCompletionRequest(match: EnrichedMatch) {
+    Alert.alert(
+      'Mark this hustle complete?',
+      `This asks ${match.poster.username || 'the gig starter'} to confirm before it becomes completed.`,
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes', onPress: () => void requestMatchCompletion(match.id) },
+      ],
+    );
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      if (unseenAcceptedIds.length > 0) {
+        void markAcceptedOffersSeen(unseenAcceptedIds);
+      }
+    }, [markAcceptedOffersSeen, unseenAcceptedIds]),
+  );
 
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
@@ -77,8 +114,10 @@ export default function MatchesScreen() {
             <HustleCard
               key={match.id}
               match={match}
-              onUnlock={() => void handleUnlock(match.id)}
-              onComplete={() => void completeMatch(match.id)}
+              newAcceptance={hasUnseenAcceptedOffer(match, profile.id)}
+              unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
+              onUnlock={() => confirmUnlock(match)}
+              onComplete={() => confirmCompletionRequest(match)}
             />
           ))
         )}
@@ -131,12 +170,26 @@ function SectionHeader({ title, count, icon }: { title: string; count: number; i
   );
 }
 
-function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onUnlock: () => void; onComplete: () => void }) {
+function HustleCard({
+  match,
+  newAcceptance,
+  onUnlock,
+  onComplete,
+  unreadMessageCount,
+}: {
+  match: EnrichedMatch;
+  newAcceptance: boolean;
+  onUnlock: () => void;
+  onComplete: () => void;
+  unreadMessageCount: number;
+}) {
   const { isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const reveal = match.is_unlocked;
   const taskImageSource = resolveImageSource(match.task.image_urls[0]);
+  const completionRequested = Boolean(match.doer_completed_at);
+  const categoriesText = getTaskCategoryLabels(match.task).join(', ');
 
   return (
     <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
@@ -151,7 +204,11 @@ function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onU
           </View>
           <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>{match.task.title}</Text>
         </View>
-        <Ionicons name={reveal ? 'chatbubble-ellipses' : 'lock-closed'} size={22} color="#A78BFA" />
+        <View className="items-end gap-2">
+          {newAcceptance ? <NotificationBadge label="New" /> : null}
+          {unreadMessageCount > 0 ? <NotificationBadge label={String(unreadMessageCount)} /> : null}
+          <Ionicons name={reveal ? 'chatbubble-ellipses' : 'lock-closed'} size={22} color="#A78BFA" />
+        </View>
       </View>
 
       {taskImageSource && (
@@ -159,7 +216,7 @@ function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onU
       )}
 
       <View className="mb-4 flex-row flex-wrap gap-2">
-        <Chip icon="pricetag" label={match.task.category} />
+        <Chip icon="pricetag" label={categoriesText} />
         <Chip icon="navigate-circle" label={match.task.location_label} />
         <Chip icon="calendar" label={match.task.date_window || 'Flexible'} />
       </View>
@@ -184,7 +241,13 @@ function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onU
               <Text className="text-sm font-bold text-white">Open Chat</Text>
             </Pressable>
           </Link>
-          <PrimaryButton label="Mark Completed" icon="checkmark" tone="ghost" onPress={onComplete} />
+          <PrimaryButton
+            label={completionRequested ? 'Waiting for confirmation' : 'Mark Completed'}
+            icon={completionRequested ? 'time' : 'checkmark'}
+            tone="ghost"
+            disabled={completionRequested}
+            onPress={onComplete}
+          />
         </View>
       ) : (
         <PrimaryButton
@@ -193,6 +256,14 @@ function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onU
           onPress={onUnlock}
         />
       )}
+    </View>
+  );
+}
+
+function NotificationBadge({ label }: { label: string }) {
+  return (
+    <View className="min-w-6 items-center justify-center rounded-full bg-rose-500 px-2 py-1">
+      <Text className="text-xs font-black text-white">{label}</Text>
     </View>
   );
 }

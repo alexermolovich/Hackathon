@@ -34,13 +34,14 @@ import {
 } from './auth-utils';
 import type { Coordinates, EnrichedMatch, GigMatch, Message, Profile, Task } from './gig-types';
 import { buildDeck, createUuid, enrichMatches } from './gig-utils';
-import { toPublicAvatarRef, toShareableImageRefs } from './repo-images';
+import { isTransientImageRef, toPublicAvatarRef, toShareableImageRefs } from './repo-images';
 
 type CreateTaskInput = {
   title: string;
   description: string;
   budget: number;
   category: string;
+  requiredSkills: string[];
   location_label: string;
   date_window: string;
   is_boosted: boolean;
@@ -124,9 +125,13 @@ type GigStoreValue = {
   submitMatchedBid: (task: Task, input: BidInput) => Promise<GigMatch>;
   likeBack: (matchId: string) => Promise<void>;
   unlockChat: (matchId: string) => Promise<boolean>;
+  requestMatchCompletion: (matchId: string) => Promise<void>;
   completeMatch: (matchId: string) => Promise<void>;
   rateMatch: (matchId: string, rating: number) => Promise<boolean>;
   sendMessage: (matchId: string, content: string) => Promise<void>;
+  markCounterBidsSeen: (matchIds: string[]) => Promise<void>;
+  markAcceptedOffersSeen: (matchIds: string[]) => Promise<void>;
+  markMessagesRead: (matchId: string) => Promise<void>;
   verifySelfie: (avatarUri: string) => Promise<void>;
   startPhoneOnlyAuth: () => StoreActionResult;
   signInWithGoogle: () => Promise<StoreActionResult>;
@@ -177,6 +182,11 @@ function getNumber(value: unknown, fallback: number) {
 function getOptionalNumber(value: unknown) {
   const nextValue = Number(value);
   return Number.isFinite(nextValue) ? nextValue : null;
+}
+
+function getAvatarRef(value: unknown, fallback: string | null) {
+  const avatarRef = getString(value) || fallback;
+  return avatarRef && isTransientImageRef(avatarRef) ? null : avatarRef;
 }
 
 function normalizeRating(value: number) {
@@ -237,7 +247,7 @@ function buildProfileFromRow(id: string, row?: Record<string, unknown> | null, c
     ...current,
     id,
     username: getString(row?.username) || current.username,
-    avatar_url: getString(row?.avatar_url) || current.avatar_url,
+    avatar_url: getAvatarRef(row?.avatar_url, current.avatar_url),
     bio: getString(row?.bio) || current.bio,
     skills: getStringArray(row?.skills).length > 0 ? getStringArray(row?.skills) : current.skills,
     interests: getStringArray(row?.interests).length > 0 ? getStringArray(row?.interests) : current.interests,
@@ -540,6 +550,12 @@ export function GigProvider({ children }: PropsWithChildren) {
         status,
         doer_rating_by_poster: getOptionalNumber(row.doer_rating_by_poster),
         poster_rating_by_doer: getOptionalNumber(row.poster_rating_by_doer),
+        poster_seen_counter_at: getString(row.poster_seen_counter_at) || null,
+        doer_seen_match_at: getString(row.doer_seen_match_at) || null,
+        poster_read_messages_at: getString(row.poster_read_messages_at) || null,
+        doer_read_messages_at: getString(row.doer_read_messages_at) || null,
+        doer_completed_at: getString(row.doer_completed_at) || null,
+        poster_completed_at: getString(row.poster_completed_at) || null,
         created_at: toIsoString(row.created_at),
       };
     },
@@ -713,7 +729,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       category: input.category,
       location_label: input.location_label,
       location: profile.location,
-      required_skills: [input.category],
+      required_skills: input.requiredSkills.length > 0 ? input.requiredSkills : [input.category],
       image_urls: input.image_urls,
       is_boosted: input.is_boosted,
       boost_days: input.boost_days,
@@ -765,7 +781,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       budget: input.budget,
       category: input.category,
       location_label: input.location_label,
-      required_skills: [input.category],
+      required_skills: input.requiredSkills.length > 0 ? input.requiredSkills : [input.category],
       image_urls: input.image_urls,
       is_boosted: input.is_boosted,
       boost_days: input.is_boosted ? input.boost_days : 0,
@@ -811,6 +827,12 @@ export function GigProvider({ children }: PropsWithChildren) {
       status: 'pending',
       doer_rating_by_poster: null,
       poster_rating_by_doer: null,
+      poster_seen_counter_at: null,
+      doer_seen_match_at: null,
+      poster_read_messages_at: null,
+      doer_read_messages_at: null,
+      doer_completed_at: null,
+      poster_completed_at: null,
       created_at: new Date().toISOString(),
     };
 
@@ -835,6 +857,12 @@ export function GigProvider({ children }: PropsWithChildren) {
       status: 'matched',
       doer_rating_by_poster: null,
       poster_rating_by_doer: null,
+      poster_seen_counter_at: null,
+      doer_seen_match_at: null,
+      poster_read_messages_at: null,
+      doer_read_messages_at: null,
+      doer_completed_at: null,
+      poster_completed_at: null,
       created_at: new Date().toISOString(),
     };
 
@@ -848,14 +876,22 @@ export function GigProvider({ children }: PropsWithChildren) {
   }
 
   async function likeBack(matchId: string) {
+    const acceptedAt = new Date().toISOString();
+
     setMatches((current) =>
-      current.map((match) => (match.id === matchId ? { ...match, status: 'matched' } : match)),
+      current.map((match) =>
+        match.id === matchId
+          ? { ...match, status: 'matched', doer_seen_match_at: null, poster_seen_counter_at: match.poster_seen_counter_at ?? acceptedAt }
+          : match,
+      ),
     );
 
     if (firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
         status: 'matched',
-        updated_at: new Date().toISOString(),
+        doer_seen_match_at: null,
+        poster_seen_counter_at: acceptedAt,
+        updated_at: acceptedAt,
       });
     }
   }
@@ -881,12 +917,48 @@ export function GigProvider({ children }: PropsWithChildren) {
     return true;
   }
 
+  async function requestMatchCompletion(matchId: string) {
+    const match = matches.find((item) => item.id === matchId);
+
+    if (!match || match.doer_id !== profile.id || match.status !== 'matched' || match.doer_completed_at) {
+      return;
+    }
+
+    const completedAt = new Date().toISOString();
+
+    setMatches((current) =>
+      current.map((item) => (item.id === matchId ? { ...item, doer_completed_at: completedAt } : item)),
+    );
+
+    if (firebaseDb) {
+      await updateDoc(doc(firebaseDb, 'matches', matchId), {
+        doer_completed_at: completedAt,
+        updated_at: completedAt,
+      });
+    }
+  }
+
   async function completeMatch(matchId: string) {
     const match = matches.find((item) => item.id === matchId);
     const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
 
+    if (!match || !task || task.poster_id !== profile.id || match.status !== 'matched') {
+      return;
+    }
+
+    const completedAt = new Date().toISOString();
+
     setMatches((current) =>
-      current.map((item) => (item.id === matchId ? { ...item, status: 'completed' } : item)),
+      current.map((item) =>
+        item.id === matchId
+          ? {
+              ...item,
+              status: 'completed',
+              doer_completed_at: item.doer_completed_at ?? completedAt,
+              poster_completed_at: completedAt,
+            }
+          : item,
+      ),
     );
 
     if (task) {
@@ -895,64 +967,60 @@ export function GigProvider({ children }: PropsWithChildren) {
       );
     }
 
-    if (match) {
-      setProfiles((current) =>
-        current.map((item) => {
-          if (item.id === match.doer_id) {
-            return { ...item, vouch_count: item.vouch_count + 1 };
-          }
-
-          if (task && item.id === task.poster_id) {
-            return { ...item, posted_vouch_count: item.posted_vouch_count + 1 };
-          }
-
-          return item;
-        }),
-      );
-      setProfile((current) => {
-        if (current.id === match.doer_id) {
-          return { ...current, vouch_count: current.vouch_count + 1 };
+    setProfiles((current) =>
+      current.map((item) => {
+        if (item.id === match.doer_id) {
+          return { ...item, vouch_count: item.vouch_count + 1 };
         }
 
-        if (task && current.id === task.poster_id) {
-          return { ...current, posted_vouch_count: current.posted_vouch_count + 1 };
+        if (item.id === task.poster_id) {
+          return { ...item, posted_vouch_count: item.posted_vouch_count + 1 };
         }
 
-        return current;
-      });
-    }
+        return item;
+      }),
+    );
+    setProfile((current) => {
+      if (current.id === match.doer_id) {
+        return { ...current, vouch_count: current.vouch_count + 1 };
+      }
+
+      if (current.id === task.poster_id) {
+        return { ...current, posted_vouch_count: current.posted_vouch_count + 1 };
+      }
+
+      return current;
+    });
 
     if (firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
         status: 'completed',
-        updated_at: new Date().toISOString(),
+        doer_completed_at: match.doer_completed_at ?? completedAt,
+        poster_completed_at: completedAt,
+        updated_at: completedAt,
       });
 
-      if (task) {
-        await updateDoc(doc(firebaseDb, 'tasks', task.id), {
-          status: 'archived',
-          updated_at: new Date().toISOString(),
-        });
-        await setDoc(
-          doc(firebaseDb, 'profiles', task.poster_id),
-          { posted_vouch_count: increment(1) },
-          { merge: true },
-        );
-        await setDoc(
-          doc(firebaseDb, 'public_profiles', task.poster_id),
-          { posted_vouch_count: increment(1), updated_at: new Date().toISOString() },
-          { merge: true },
-        );
-      }
+      await updateDoc(doc(firebaseDb, 'tasks', task.id), {
+        status: 'archived',
+        updated_at: completedAt,
+      });
+      await setDoc(
+        doc(firebaseDb, 'profiles', task.poster_id),
+        { posted_vouch_count: increment(1) },
+        { merge: true },
+      );
+      await setDoc(
+        doc(firebaseDb, 'public_profiles', task.poster_id),
+        { posted_vouch_count: increment(1), updated_at: completedAt },
+        { merge: true },
+      );
 
-      if (match) {
-        await setDoc(doc(firebaseDb, 'profiles', match.doer_id), { vouch_count: increment(1) }, { merge: true });
-        await setDoc(
-          doc(firebaseDb, 'public_profiles', match.doer_id),
-          { vouch_count: increment(1), updated_at: new Date().toISOString() },
-          { merge: true },
-        );
-      }
+      await setDoc(doc(firebaseDb, 'profiles', match.doer_id), { vouch_count: increment(1) }, { merge: true });
+      await setDoc(
+        doc(firebaseDb, 'public_profiles', match.doer_id),
+        { vouch_count: increment(1), updated_at: completedAt },
+        { merge: true },
+      );
     }
   }
 
@@ -1033,6 +1101,94 @@ export function GigProvider({ children }: PropsWithChildren) {
       const match = matches.find((item) => item.id === matchId);
       const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
       await setDoc(doc(firebaseDb, 'messages', message.id), buildMessageRecord(message, match, task));
+    }
+  }
+
+  async function markCounterBidsSeen(matchIds: string[]) {
+    const ids = Array.from(new Set(matchIds.filter(Boolean)));
+
+    if (ids.length === 0) {
+      return;
+    }
+
+    const seenAt = new Date().toISOString();
+
+    setMatches((current) =>
+      current.map((match) =>
+        ids.includes(match.id) && !match.poster_seen_counter_at
+          ? { ...match, poster_seen_counter_at: seenAt }
+          : match,
+      ),
+    );
+
+    const database = firebaseDb;
+
+    if (database) {
+      await Promise.allSettled(
+        ids.map((matchId) =>
+          updateDoc(doc(database, 'matches', matchId), {
+            poster_seen_counter_at: seenAt,
+            updated_at: seenAt,
+          }),
+        ),
+      );
+    }
+  }
+
+  async function markAcceptedOffersSeen(matchIds: string[]) {
+    const ids = Array.from(new Set(matchIds.filter(Boolean)));
+
+    if (ids.length === 0) {
+      return;
+    }
+
+    const seenAt = new Date().toISOString();
+
+    setMatches((current) =>
+      current.map((match) =>
+        ids.includes(match.id) && !match.doer_seen_match_at ? { ...match, doer_seen_match_at: seenAt } : match,
+      ),
+    );
+
+    const database = firebaseDb;
+
+    if (database) {
+      await Promise.allSettled(
+        ids.map((matchId) =>
+          updateDoc(doc(database, 'matches', matchId), {
+            doer_seen_match_at: seenAt,
+            updated_at: seenAt,
+          }),
+        ),
+      );
+    }
+  }
+
+  async function markMessagesRead(matchId: string) {
+    const match = matches.find((item) => item.id === matchId);
+    const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
+    const field =
+      task?.poster_id === profile.id
+        ? 'poster_read_messages_at'
+        : match?.doer_id === profile.id
+          ? 'doer_read_messages_at'
+          : null;
+
+    if (!match || !field) {
+      return;
+    }
+
+    const readAt = new Date().toISOString();
+
+    setMatches((current) =>
+      current.map((item) => (item.id === matchId ? { ...item, [field]: readAt } : item)),
+    );
+
+    if (firebaseDb) {
+      await updateDoc(doc(firebaseDb, 'matches', matchId), {
+        [field]: readAt,
+        updated_at: readAt,
+      });
     }
   }
 
@@ -1314,9 +1470,13 @@ export function GigProvider({ children }: PropsWithChildren) {
     submitMatchedBid,
     likeBack,
     unlockChat,
+    requestMatchCompletion,
     completeMatch,
     rateMatch,
     sendMessage,
+    markCounterBidsSeen,
+    markAcceptedOffersSeen,
+    markMessagesRead,
     verifySelfie,
     startPhoneOnlyAuth,
     signInWithGoogle,

@@ -66,6 +66,12 @@ export type GigMatch = {
   status: MatchStatus;
   doer_rating_by_poster: number | null;
   poster_rating_by_doer: number | null;
+  poster_seen_counter_at: string | null;
+  doer_seen_match_at: string | null;
+  poster_read_messages_at: string | null;
+  doer_read_messages_at: string | null;
+  doer_completed_at: string | null;
+  poster_completed_at: string | null;
   created_at: string;
 };
 

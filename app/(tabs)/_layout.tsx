@@ -3,9 +3,28 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { useGigStore } from '@/lib/gig-store';
+import { getUnreadMessageCount, hasUnseenAcceptedOffer, hasUnseenCounterBid } from '@/lib/gig-utils';
 
 export default function TabLayout() {
-  const { isDark } = useGigStore();
+  const { isDark, matches, messages, profile } = useGigStore();
+  const forgeBadgeCount =
+    matches.filter((match) => hasUnseenCounterBid(match, profile.id)).length +
+    matches.reduce(
+      (total, match) =>
+        match.status === 'matched' && match.task.poster_id === profile.id
+          ? total + getUnreadMessageCount(match, messages, profile.id)
+          : total,
+      0,
+    );
+  const hustlesBadgeCount =
+    matches.filter((match) => hasUnseenAcceptedOffer(match, profile.id)).length +
+    matches.reduce(
+      (total, match) =>
+        match.status === 'matched' && match.doer_id === profile.id
+          ? total + getUnreadMessageCount(match, messages, profile.id)
+          : total,
+      0,
+    );
 
   return (
     <Tabs
@@ -32,6 +51,7 @@ export default function TabLayout() {
         name="forge"
         options={{
           title: 'Forge',
+          tabBarBadge: badgeValue(forgeBadgeCount),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'hammer' : 'hammer-outline'} size={24} color={color} />
           ),
@@ -50,6 +70,7 @@ export default function TabLayout() {
         name="matches"
         options={{
           title: 'Hustles',
+          tabBarBadge: badgeValue(hustlesBadgeCount),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={24} color={color} />
           ),
@@ -69,4 +90,12 @@ export default function TabLayout() {
       />
     </Tabs>
   );
+}
+
+function badgeValue(count: number) {
+  if (count <= 0) {
+    return undefined;
+  }
+
+  return count > 9 ? '9+' : count;
 }

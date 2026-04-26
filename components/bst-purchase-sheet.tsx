@@ -26,6 +26,7 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const panelClass = isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white';
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
+  const claimedToday = profile.last_reward_claimed_at?.slice(0, 10) === new Date().toISOString().slice(0, 10);
 
   function handleBuy(pack: (typeof BST_PACKAGES)[number]) {
     buyBsts(pack.amount);
@@ -84,9 +85,10 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
               </View>
             </View>
             <PrimaryButton
-              label={`Claim daily +${DAILY_REWARD_BSTS}`}
-              icon="calendar"
+              label={claimedToday ? 'Daily claimed' : `Claim daily +${DAILY_REWARD_BSTS}`}
+              icon={claimedToday ? 'checkmark-circle' : 'calendar'}
               tone="emerald"
+              disabled={claimedToday}
               onPress={handleReward}
             />
           </View>

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link, router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { Image } from 'expo-image';
+import { Link, router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -15,7 +16,9 @@ import { TaskComposer } from '@/components/task-composer';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { getTaskCategoryLabels, getUnreadMessageCount, hasUnseenCounterBid } from '@/lib/gig-utils';
 import { formatVisibleRating, visibleRatingValue } from '@/lib/rating-utils';
+import { resolveImageSource } from '@/lib/repo-images';
 import { gigHref } from '@/lib/routes';
 
 type ForgeView = 'applicants' | 'posted' | 'archived';
@@ -34,7 +37,7 @@ const sortOptions: {
 ];
 
 export default function ForgeScreen() {
-  const { profile, tasks, matches, likeBack, rateMatch, isDark } = useGigStore();
+  const { profile, tasks, matches, messages, likeBack, completeMatch, rateMatch, markCounterBidsSeen, isDark } = useGigStore();
   const [composerOpen, setComposerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -68,6 +71,10 @@ export default function ForgeScreen() {
     () => matches.filter((match) => match.task.poster_id === profile.id && match.status === 'completed'),
     [matches, profile.id],
   );
+  const unseenCounterBidIds = useMemo(
+    () => applicantMatches.filter((match) => hasUnseenCounterBid(match, profile.id)).map((match) => match.id),
+    [applicantMatches, profile.id],
+  );
 
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
@@ -96,6 +103,25 @@ export default function ForgeScreen() {
       ],
     );
   }
+
+  function confirmComplete(match: EnrichedMatch) {
+    Alert.alert(
+      'Complete this gig?',
+      `Confirm ${match.doer.username} finished "${match.task.title}" for $${match.counter_bid}?`,
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes', onPress: () => void completeMatch(match.id) },
+      ],
+    );
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      if (activeView === 'applicants' && unseenCounterBidIds.length > 0) {
+        void markCounterBidsSeen(unseenCounterBidIds);
+      }
+    }, [activeView, markCounterBidsSeen, unseenCounterBidIds]),
+  );
 
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
@@ -135,7 +161,14 @@ export default function ForgeScreen() {
               <EmptyState copy="Counter bids from hustlers land here after they swipe right on your gigs." />
             ) : (
               applicantMatches.map((match) => (
-                <ApplicantCard key={match.id} match={match} onPick={() => confirmPick(match)} />
+                <ApplicantCard
+                  key={match.id}
+                  match={match}
+                  newCounterBid={hasUnseenCounterBid(match, profile.id)}
+                  unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
+                  onComplete={() => confirmComplete(match)}
+                  onPick={() => confirmPick(match)}
+                />
               ))
             )}
 
@@ -273,11 +306,24 @@ function ViewButton({
   );
 }
 
-function ApplicantCard({ match, onPick }: { match: EnrichedMatch; onPick: () => void }) {
+function ApplicantCard({
+  match,
+  newCounterBid,
+  onComplete,
+  onPick,
+  unreadMessageCount,
+}: {
+  match: EnrichedMatch;
+  newCounterBid: boolean;
+  onComplete: () => void;
+  onPick: () => void;
+  unreadMessageCount: number;
+}) {
   const { isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const cardClass = isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white';
+  const completionRequested = Boolean(match.doer_completed_at);
   const content = (
     <View className={`mb-4 rounded-[30px] border p-5 ${cardClass}`}>
       <View className="mb-4 flex-row items-center gap-3">
@@ -289,7 +335,11 @@ function ApplicantCard({ match, onPick }: { match: EnrichedMatch; onPick: () => 
           </View>
           <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>Ready to do: {match.task.title}</Text>
         </View>
-        {match.status === 'matched' ? <Ionicons name="checkmark-circle" size={22} color="#10B981" /> : null}
+        <View className="items-end gap-2">
+          {newCounterBid ? <NotificationBadge label="New" /> : null}
+          {unreadMessageCount > 0 ? <NotificationBadge label={String(unreadMessageCount)} /> : null}
+          {match.status === 'matched' ? <Ionicons name="checkmark-circle" size={22} color="#10B981" /> : null}
+        </View>
       </View>
 
       <View className="mb-4 flex-row gap-3">
@@ -308,6 +358,15 @@ function ApplicantCard({ match, onPick }: { match: EnrichedMatch; onPick: () => 
 
       {match.status === 'pending' ? (
         <PrimaryButton label="Pick Hustler" icon="heart" tone="emerald" onPress={onPick} />
+      ) : completionRequested ? (
+        <View className="gap-3">
+          <View className={`rounded-[22px] px-4 py-3 ${isDark ? 'bg-orange-500/15' : 'bg-orange-50'}`}>
+            <Text className={`text-sm font-black ${isDark ? 'text-orange-100' : 'text-orange-800'}`}>
+              Hustler marked this complete
+            </Text>
+          </View>
+          <PrimaryButton label="Confirm Complete" icon="checkmark-done" tone="emerald" onPress={onComplete} />
+        </View>
       ) : (
         <View className={`rounded-[22px] px-4 py-3 ${isDark ? 'bg-emerald-500/15' : 'bg-emerald-50'}`}>
           <Text className={`text-sm font-black ${isDark ? 'text-emerald-100' : 'text-emerald-800'}`}>
@@ -373,21 +432,34 @@ function SectionLabel({ title, count }: { title: string; count: number }) {
   );
 }
 
+function NotificationBadge({ label }: { label: string }) {
+  return (
+    <View className="min-w-6 items-center justify-center rounded-full bg-rose-500 px-2 py-1">
+      <Text className="text-xs font-black text-white">{label}</Text>
+    </View>
+  );
+}
+
 function PostedGigCard({ task, archived = false, onPress }: { task: Task; archived?: boolean; onPress?: () => void }) {
   const { matches, isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const candidateCount = matches.filter((match) => match.task.id === task.id && match.status !== 'completed').length;
+  const categoriesText = getTaskCategoryLabels(task).join(', ');
+  const taskImageSource = resolveImageSource(task.image_urls[0]);
 
   const content = (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
       className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+      {taskImageSource ? (
+        <Image source={taskImageSource} style={{ borderRadius: 22, height: 132, marginBottom: 16, width: '100%' }} contentFit="cover" />
+      ) : null}
       <View className="mb-4 flex-row items-start justify-between gap-3">
         <View className="flex-1">
           <Text className={`text-xl font-black ${titleClass}`} numberOfLines={2}>{task.title}</Text>
-          <Text className={`mt-1 text-sm ${mutedClass}`}>{task.category} - {task.location_label}</Text>
+          <Text className={`mt-1 text-sm ${mutedClass}`}>{categoriesText} - {task.location_label}</Text>
         </View>
         <View className={`rounded-full px-3 py-2 ${archived ? 'bg-zinc-500/20' : 'bg-violet/20'}`}>
           <Text className={`text-xs font-black ${archived ? mutedClass : 'text-violet-300'}`}>

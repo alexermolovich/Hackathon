@@ -7,16 +7,24 @@ import type { ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
+import {
+  CalendarRangePicker,
+  addMonths,
+  formatDateLabel,
+  formatDateRange,
+  startOfDay,
+  startOfMonth,
+} from '@/components/calendar-range-picker';
 import { CategorySelector } from '@/components/category-selector';
 import { PrimaryButton } from '@/components/primary-button';
 import type { Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { approximateLocationLabel } from '@/lib/geo';
 import { resolveImageSource } from '@/lib/repo-images';
 import { BOOST_COST_PER_DAY_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const boostDurations = [1, 3, 7];
-const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const webInputReset = { boxShadow: 'none', outlineStyle: 'none' } as const;
 
 type TaskComposerProps = {
   onClose?: () => void;
@@ -35,7 +43,9 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
   const [title, setTitle] = useState(task?.title ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
   const [budget, setBudget] = useState(task ? String(task.budget) : '');
-  const [category, setCategory] = useState(task?.category ?? '');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(
+    task?.required_skills.length ? task.required_skills : task?.category ? [task.category] : [],
+  );
   const [locationLabel, setLocationLabel] = useState(task?.location_label ?? defaultLocationLabel);
   const [dateWindow, setDateWindow] = useState(task?.date_window ?? '');
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -47,28 +57,54 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
   const [boostDays, setBoostDays] = useState(task?.boost_days || 3);
   const [imageUrls, setImageUrls] = useState<string[]>(task?.image_urls ?? []);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [publishAttempted, setPublishAttempted] = useState(false);
 
   const boostCost = useMemo(
     () => (isBoosted ? boostDays * BOOST_COST_PER_DAY_BSTS : 0),
     [boostDays, isBoosted],
   );
-  const inputClass = `rounded-[24px] border px-4 py-4 text-base ${
-    isDark ? 'border-white/10 bg-white/10 text-white' : 'border-zinc-200 bg-zinc-100 text-zinc-950'
-  }`;
+  const inputClass = (hasError = false) =>
+    `rounded-[24px] border px-4 py-4 text-base ${
+      hasError
+        ? isDark
+          ? 'border-rose-400/80 bg-rose-500/10 text-white'
+          : 'border-rose-500 bg-rose-50 text-zinc-950'
+        : isDark
+          ? 'border-white/10 bg-white/10 text-white'
+          : 'border-zinc-200 bg-zinc-100 text-zinc-950'
+    }`;
   const labelClass = isDark ? 'text-zinc-300' : 'text-zinc-700';
+  const errorLabelClass = isDark ? 'text-rose-300' : 'text-rose-600';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
+  const errorFrameClass = isDark ? 'border-rose-400/80 bg-rose-500/10' : 'border-rose-500 bg-rose-50';
   const parsedBudget = Number(budget);
+  const primaryCategory = selectedCategories[0] ?? '';
+  const missingTitle = !title.trim();
+  const missingDescription = !description.trim();
+  const missingImages = imageUrls.length === 0;
+  const missingBudget = !Number.isFinite(parsedBudget) || parsedBudget < 5;
+  const missingCategories = selectedCategories.length === 0;
+  const missingDates = !dateWindow.trim();
+  const missingFieldLabels = [
+    missingTitle ? 'title' : null,
+    missingDescription ? 'description' : null,
+    missingImages ? 'reference image' : null,
+    missingBudget ? 'budget $5+' : null,
+    missingCategories ? 'category' : null,
+    missingDates ? 'date range' : null,
+  ].filter(Boolean);
   const canPublish = Boolean(
-    title.trim() &&
-      description.trim() &&
-      category &&
-      locationLabel.trim() &&
-      Number.isFinite(parsedBudget) &&
-      parsedBudget >= 5 &&
-      imageUrls.length > 0,
+    !missingTitle &&
+      !missingDescription &&
+      !missingImages &&
+      !missingBudget &&
+      !missingCategories &&
+      !missingDates &&
+      locationLabel.trim(),
   );
+  const showValidation = publishAttempted;
 
   useEffect(() => {
     if (!task) {
@@ -78,13 +114,14 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
     setTitle(task.title);
     setDescription(task.description);
     setBudget(String(task.budget));
-    setCategory(task.category);
+    setSelectedCategories(task.required_skills.length ? task.required_skills : task.category ? [task.category] : []);
     setLocationLabel(task.location_label);
     setDateWindow(task.date_window);
     setStatus(task.status);
     setIsBoosted(task.is_boosted);
     setBoostDays(task.boost_days || 3);
     setImageUrls(task.image_urls);
+    setPublishAttempted(false);
   }, [task]);
 
   useEffect(() => {
@@ -163,13 +200,10 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
     setDateWindow(formatDateRange(rangeStart, selected));
   }
 
-  function updateCategorySelection(selected: string[]) {
-    setCategory(selected[selected.length - 1] ?? '');
-  }
-
   async function submitTask() {
     if (!canPublish) {
-      Alert.alert('Missing details', 'Add a title, description, category, image, and realistic budget.');
+      setPublishAttempted(true);
+      Alert.alert('Missing details', `Add: ${missingFieldLabels.join(', ')}.`);
       return;
     }
 
@@ -177,7 +211,8 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
       title: title.trim(),
       description: description.trim(),
       budget: parsedBudget,
-      category,
+      category: primaryCategory,
+      requiredSkills: selectedCategories,
       location_label: locationLabel.trim(),
       date_window: dateWindow.trim(),
       is_boosted: isBoosted,
@@ -204,6 +239,7 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
     );
     onSaved?.();
     onCreated?.();
+    setPublishAttempted(false);
   }
 
   return (
@@ -227,6 +263,17 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
       </View>
 
       <ScrollView contentContainerClassName="pb-8 pt-5" showsVerticalScrollIndicator={false}>
+        {showValidation && missingFieldLabels.length > 0 ? (
+          <View className={`mb-5 rounded-[24px] border p-4 ${errorFrameClass}`}>
+            <View className="flex-row items-center gap-2">
+              <Ionicons name="alert-circle" size={18} color="#F43F5E" />
+              <Text className={`flex-1 text-sm font-black ${errorLabelClass}`}>
+                Missing: {missingFieldLabels.join(', ')}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {isEditing && (
           <Field label="Status" labelClass={labelClass}>
             <View className="flex-row gap-2">
@@ -251,35 +298,35 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
           </Field>
         )}
 
-        <Field label="Title" labelClass={labelClass}>
+        <Field label="Title" labelClass={showValidation && missingTitle ? errorLabelClass : labelClass}>
           <TextInput
             value={title}
             onChangeText={setTitle}
             placeholder="What do you need done?"
             placeholderTextColor="#71717A"
-            className={`${inputClass} font-semibold`}
+            className={`${inputClass(showValidation && missingTitle)} font-semibold`}
           />
         </Field>
 
-        <Field label="Description" labelClass={labelClass}>
+        <Field label="Description" labelClass={showValidation && missingDescription ? errorLabelClass : labelClass}>
           <TextInput
             value={description}
             onChangeText={setDescription}
             multiline
             placeholder="Describe the gig, timing, and constraints."
             placeholderTextColor="#71717A"
-            className={`${inputClass} min-h-32 leading-6`}
+            className={`${inputClass(showValidation && missingDescription)} min-h-32 leading-6`}
             textAlignVertical="top"
           />
         </Field>
 
-        <Field label={`Reference images (${imageUrls.length}/4)`} labelClass={labelClass}>
+        <Field label={`Reference images (${imageUrls.length}/4)`} labelClass={showValidation && missingImages ? errorLabelClass : labelClass}>
           <View className="gap-3">
             <Pressable
               accessibilityRole="button"
               onPress={() => void pickImages()}
               className={`min-h-14 flex-row items-center justify-center gap-2 rounded-[24px] border ${
-                isDark ? 'border-orange-400/40 bg-orange-500/15' : 'border-orange-300 bg-orange-50'
+                showValidation && missingImages ? errorFrameClass : isDark ? 'border-orange-400/40 bg-orange-500/15' : 'border-orange-300 bg-orange-50'
               }`}>
               <Ionicons name="image" size={20} color="#F97316" />
               <Text className={`font-bold ${titleClass}`}>Attach Images</Text>
@@ -304,14 +351,15 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
           </View>
         </Field>
 
-        <Field label="Budget" labelClass={labelClass}>
-          <View className={`flex-row items-center rounded-[24px] border px-4 ${softClass}`}>
+        <Field label="Budget" labelClass={showValidation && missingBudget ? errorLabelClass : labelClass}>
+          <View className={`flex-row items-center rounded-[24px] border px-4 ${showValidation && missingBudget ? errorFrameClass : softClass}`}>
             <Text className={`text-xl font-black ${titleClass}`}>$</Text>
             <TextInput
               value={budget}
               onChangeText={setBudget}
               keyboardType="numeric"
               className={`min-w-0 flex-1 py-4 text-xl font-black ${titleClass}`}
+              style={webInputReset as never}
             />
           </View>
         </Field>
@@ -362,15 +410,19 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
           </Field>
         )}
 
-        <Field label="Category" labelClass={labelClass}>
-          <CategorySelector selected={category ? [category] : []} onChange={updateCategorySelection} minSelected={1} />
+        <Field label="Categories" labelClass={showValidation && missingCategories ? errorLabelClass : labelClass}>
+          <View className={`rounded-[24px] border p-3 ${showValidation && missingCategories ? errorFrameClass : softClass}`}>
+            <CategorySelector selected={selectedCategories} onChange={setSelectedCategories} minSelected={1} />
+          </View>
         </Field>
 
-        <Field label="Start and end dates" labelClass={labelClass}>
+        <Field label="Start and end dates" labelClass={showValidation && missingDates ? errorLabelClass : labelClass}>
           <Pressable
             accessibilityRole="button"
             onPress={() => setCalendarOpen((current) => !current)}
-            className={`min-h-14 flex-row items-center justify-between rounded-[24px] border px-4 ${softClass}`}>
+            className={`min-h-14 flex-row items-center justify-between rounded-[24px] border px-4 ${
+              showValidation && missingDates ? errorFrameClass : softClass
+            }`}>
             <Text className={`flex-1 font-semibold ${dateWindow ? titleClass : mutedClass}`} numberOfLines={1}>
               {dateWindow || 'Choose a date range'}
             </Text>
@@ -393,7 +445,7 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
           label={isEditing ? 'Save Gig' : 'Publish Gig'}
           icon={isEditing ? 'save' : 'rocket'}
           onPress={() => void submitTask()}
-          disabled={!canPublish}
+          visuallyDisabled={!canPublish}
         />
       </ScrollView>
 
@@ -403,98 +455,6 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
         onClose={() => setPurchaseOpen(false)}
       />
     </>
-  );
-}
-
-function CalendarRangePicker({
-  isDark,
-  onChangeMonth,
-  onDone,
-  onSelect,
-  rangeEnd,
-  rangeStart,
-  visibleMonth,
-}: {
-  isDark: boolean;
-  onChangeMonth: (offset: number) => void;
-  onDone: () => void;
-  onSelect: (day: Date) => void;
-  rangeEnd: Date | null;
-  rangeStart: Date | null;
-  visibleMonth: Date;
-}) {
-  const titleClass = isDark ? 'text-white' : 'text-zinc-950';
-  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
-  const cells = buildCalendarCells(visibleMonth);
-
-  return (
-    <View className={`mt-3 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
-      <View className="mb-4 flex-row items-center justify-between">
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onChangeMonth(-1)}
-          className={`h-10 w-10 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
-          <Ionicons name="chevron-back" size={20} color={isDark ? '#FFFFFF' : '#18181B'} />
-        </Pressable>
-        <Text className={`text-lg font-black ${titleClass}`}>
-          {monthNames[visibleMonth.getMonth()]} {visibleMonth.getFullYear()}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onChangeMonth(1)}
-          className={`h-10 w-10 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
-          <Ionicons name="chevron-forward" size={20} color={isDark ? '#FFFFFF' : '#18181B'} />
-        </Pressable>
-      </View>
-
-      <View className="mb-2 flex-row">
-        {weekdayLabels.map((label, index) => (
-          <Text key={`${label}-${index}`} className={`flex-1 text-center text-xs font-black ${mutedClass}`}>
-            {label}
-          </Text>
-        ))}
-      </View>
-
-      <View className="flex-row flex-wrap">
-        {cells.map((day, index) => {
-          if (!day) {
-            return <View key={`blank-${index}`} style={{ width: `${100 / 7}%`, aspectRatio: 1 }} />;
-          }
-
-          const selected = sameDay(day, rangeStart) || sameDay(day, rangeEnd);
-          const inRange = isInRange(day, rangeStart, rangeEnd);
-
-          return (
-            <View key={day.toISOString()} className="p-0.5" style={{ width: `${100 / 7}%`, aspectRatio: 1 }}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => onSelect(day)}
-                className={`h-full items-center justify-center rounded-2xl ${
-                  selected ? 'bg-violet' : inRange ? 'bg-violet/20' : isDark ? 'bg-white/5' : 'bg-zinc-100'
-                }`}>
-                <Text className={`font-black ${selected ? 'text-white' : titleClass}`}>{day.getDate()}</Text>
-              </Pressable>
-            </View>
-          );
-        })}
-      </View>
-
-      <Text className={`mt-3 text-center text-xs font-semibold ${mutedClass}`}>
-        {rangeStart && rangeEnd
-          ? `${durationDays(rangeStart, rangeEnd)} day${durationDays(rangeStart, rangeEnd) === 1 ? '' : 's'} selected`
-          : rangeStart
-            ? 'Choose an end date'
-            : 'Choose a start date'}
-      </Text>
-      {rangeStart && rangeEnd ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onDone}
-          className="mt-3 min-h-11 items-center justify-center rounded-full bg-violet px-5">
-          <Text className="text-sm font-black text-white">Done</Text>
-        </Pressable>
-      ) : null}
-    </View>
   );
 }
 
@@ -515,63 +475,8 @@ function Field({
   );
 }
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function addMonths(date: Date, offset: number) {
-  return new Date(date.getFullYear(), date.getMonth() + offset, 1);
-}
-
-function buildCalendarCells(month: Date) {
-  const firstDay = startOfMonth(month);
-  const daysInMonth = new Date(firstDay.getFullYear(), firstDay.getMonth() + 1, 0).getDate();
-  const cells: (Date | null)[] = Array.from({ length: firstDay.getDay() }, () => null);
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(new Date(firstDay.getFullYear(), firstDay.getMonth(), day));
-  }
-
-  while (cells.length % 7 !== 0) {
-    cells.push(null);
-  }
-
-  return cells;
-}
-
-function sameDay(left: Date | null, right: Date | null) {
-  return Boolean(
-    left &&
-      right &&
-      left.getFullYear() === right.getFullYear() &&
-      left.getMonth() === right.getMonth() &&
-      left.getDate() === right.getDate(),
-  );
-}
-
-function isInRange(day: Date, start: Date | null, end: Date | null) {
-  return Boolean(start && end && day.getTime() > start.getTime() && day.getTime() < end.getTime());
-}
-
-function durationDays(start: Date, end: Date) {
-  return Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-}
-
-function formatDateLabel(date: Date) {
-  return `${monthNames[date.getMonth()]} ${date.getDate()}`;
-}
-
-function formatDateRange(start: Date, end: Date) {
-  const suffix = start.getFullYear() === end.getFullYear() ? '' : `, ${end.getFullYear()}`;
-  return `${formatDateLabel(start)} - ${formatDateLabel(end)}${suffix}`;
-}
-
 function fallbackLocationLabel(latitude: number, longitude: number) {
-  return `Near ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
+  return approximateLocationLabel({ latitude, longitude });
 }
 
 function formatGeocodedLabel(place: Location.LocationGeocodedAddress) {

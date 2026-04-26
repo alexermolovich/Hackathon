@@ -11,6 +11,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
 import { calculateAge, initials } from '@/lib/gig-utils';
+import { createPersistentProfileImageRef, PROFILE_IMAGE_PICKER_OPTIONS } from '@/lib/profile-images';
 import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { CURRENCY_NAME } from '@/lib/sidehustle-config';
@@ -127,18 +128,18 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.82,
-    });
+    const result = await ImagePicker.launchImageLibraryAsync(PROFILE_IMAGE_PICKER_OPTIONS);
 
     if (result.canceled || !result.assets[0]?.uri) {
       return;
     }
 
-    setDraft((current) => ({ ...current, avatarUrl: result.assets[0].uri, isVerified: true }));
+    try {
+      const avatarUrl = await createPersistentProfileImageRef(result.assets[0]);
+      setDraft((current) => ({ ...current, avatarUrl, isVerified: true }));
+    } catch {
+      Alert.alert('Photo save failed', 'Choose another image and try again.');
+    }
   }
 
   function updatePhoneNumber(phoneNumber: string) {

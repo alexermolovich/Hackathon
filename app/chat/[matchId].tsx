@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -13,6 +13,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { getUnreadMessageCount } from '@/lib/gig-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
@@ -20,7 +21,7 @@ const GOOGLE_MAPS_URL_PATTERN = /(https:\/\/www\.google\.com\/maps\/search\/\?ap
 
 export default function ChatScreen() {
   const { matchId } = useLocalSearchParams<{ matchId: string }>();
-  const { profile, matches, messages, unlockChat, sendMessage, isDark } = useGigStore();
+  const { profile, matches, messages, unlockChat, sendMessage, markMessagesRead, isDark } = useGigStore();
   const [draft, setDraft] = useState('');
   const [purchaseOpen, setPurchaseOpen] = useState(false);
 
@@ -29,11 +30,20 @@ export default function ChatScreen() {
     () => messages.filter((message) => message.match_id === matchId),
     [matchId, messages],
   );
+  const isDoer = match?.doer_id === profile.id;
+  const locked = Boolean(match && isDoer && !match.is_unlocked);
+  const unreadMessageCount = match ? getUnreadMessageCount(match, messages, profile.id) : 0;
 
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const panelClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white';
+
+  useEffect(() => {
+    if (match && !locked && unreadMessageCount > 0) {
+      void markMessagesRead(match.id);
+    }
+  }, [locked, markMessagesRead, match, unreadMessageCount]);
 
   if (!match) {
     return (
@@ -46,8 +56,6 @@ export default function ChatScreen() {
 
   const activeMatch = match;
   const participant = activeMatch.doer_id === profile.id ? activeMatch.poster : activeMatch.doer;
-  const isDoer = activeMatch.doer_id === profile.id;
-  const locked = isDoer && !activeMatch.is_unlocked;
   const revealParticipant = !locked || !isDoer;
 
   async function handleUnlock() {
@@ -56,6 +64,17 @@ export default function ChatScreen() {
     if (!ok) {
       setPurchaseOpen(true);
     }
+  }
+
+  function confirmUnlock() {
+    Alert.alert(
+      'Unlock chat?',
+      `Spend ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME} to reveal this thread and message the gig starter?`,
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes', onPress: () => void handleUnlock() },
+      ],
+    );
   }
 
   async function handleSend() {
@@ -117,7 +136,7 @@ export default function ChatScreen() {
                 <Text className={`mb-6 text-base leading-6 ${mutedClass}`}>
                   Spend {CHAT_UNLOCK_COST_BSTS} {CURRENCY_NAME} to reveal the thread and finalize the gig.
                 </Text>
-                <PrimaryButton label={`Unlock Chat (${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME})`} icon="flame" onPress={() => void handleUnlock()} />
+                <PrimaryButton label={`Unlock Chat (${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME})`} icon="flame" onPress={confirmUnlock} />
               </View>
             </View>
           )}

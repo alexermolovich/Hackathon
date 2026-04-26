@@ -27,7 +27,15 @@ export function resolveImageSource(imageRef?: string | null) {
     return null;
   }
 
+  if (isTransientImageRef(imageRef)) {
+    return null;
+  }
+
   return repoImageSources[imageRef as RepoImageRef] ?? { uri: imageRef };
+}
+
+export function isTransientImageRef(imageRef: string) {
+  return /^blob:/i.test(imageRef);
 }
 
 export function isDeviceLocalImageRef(imageRef: string) {

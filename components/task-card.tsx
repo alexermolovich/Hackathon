@@ -7,7 +7,7 @@ import { Avatar } from '@/components/avatar';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { Profile, Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
-import { formatDistance } from '@/lib/gig-utils';
+import { formatDistance, getTaskCategoryLabels } from '@/lib/gig-utils';
 import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 
@@ -30,6 +30,7 @@ export function TaskCard({ task, currentUser, poster, revealPoster = false, onPa
   const imageHeight = Math.max(height * 0.4, 260);
   const hasActions = Boolean(onPass || onBid);
   const taskImageSource = resolveImageSource(task.image_urls[0]);
+  const categoriesText = getTaskCategoryLabels(task).join(', ');
 
   return (
     <View className={`h-full overflow-hidden rounded-[30px] border ${panelClass}`}>
@@ -98,7 +99,7 @@ export function TaskCard({ task, currentUser, poster, revealPoster = false, onPa
 
           <View className="mt-1">
             <DetailRow icon="calendar" label="Date wanted" value={task.date_window || 'Flexible'} isDark={isDark} />
-            <DetailRow icon="pricetag" label="Category" value={task.category} isDark={isDark} />
+            <DetailRow icon="pricetag" label="Categories" value={categoriesText} isDark={isDark} />
             <DetailRow icon="star" label="Requester rating" value={formatVisibleRating(poster, 'poster')} isDark={isDark} />
             <DetailRow icon="time" label="Posted" value={formatPostedAt(task.created_at)} isDark={isDark} />
             {task.required_skills.length > 0 ? (

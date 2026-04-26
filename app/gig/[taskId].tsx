@@ -8,7 +8,7 @@ import { Avatar } from '@/components/avatar';
 import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
-import { formatDistance } from '@/lib/gig-utils';
+import { formatDistance, getTaskCategoryLabels } from '@/lib/gig-utils';
 import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 
@@ -29,6 +29,7 @@ export default function GigDetailScreen() {
   const panelClass = isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white';
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
   const taskImageSource = resolveImageSource(task?.image_urls[0]);
+  const categoriesText = task ? getTaskCategoryLabels(task).join(', ') : '';
 
   function closePage() {
     if (router.canGoBack()) {
@@ -86,7 +87,7 @@ export default function GigDetailScreen() {
 
           <View className="p-5">
             <View className="mb-4 flex-row flex-wrap gap-2">
-              <Badge icon="pricetag" label={task.category} />
+              <Badge icon="pricetag" label={categoriesText} />
               <Badge icon="navigate-circle" label={task.location_label} />
               {task.is_boosted ? <Badge icon="flame" label={`${task.boost_days}d boost`} tone="orange" /> : null}
             </View>
@@ -156,7 +157,12 @@ export default function GigDetailScreen() {
             </Text>
           ) : myMatch ? (
             <Text className={`text-sm leading-5 ${mutedClass}`}>
-              Your ${myMatch.counter_bid} bid is {myMatch.status === 'pending' ? 'waiting for the gig starter' : 'picked'}.
+              Your ${myMatch.counter_bid} bid is{' '}
+              {myMatch.status === 'pending'
+                ? 'waiting for the gig starter'
+                : myMatch.doer_completed_at
+                  ? 'waiting for the gig starter to confirm completion'
+                  : 'picked'}.
             </Text>
           ) : (
             <Text className={`text-sm leading-5 ${mutedClass}`}>

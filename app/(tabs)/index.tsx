@@ -8,6 +8,14 @@ import Swiper from 'react-native-deck-swiper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
+import {
+  CalendarRangePicker,
+  addMonths,
+  formatDateLabel,
+  formatDateRange,
+  startOfDay,
+  startOfMonth,
+} from '@/components/calendar-range-picker';
 import { CategorySelector } from '@/components/category-selector';
 import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
@@ -43,6 +51,10 @@ export default function GigDeckScreen() {
   const [bidNote, setBidNote] = useState(QUICK_BID);
   const [counterBid, setCounterBid] = useState('');
   const [availabilityWindow, setAvailabilityWindow] = useState('');
+  const [availabilityCalendarOpen, setAvailabilityCalendarOpen] = useState(false);
+  const [availabilityRangeStart, setAvailabilityRangeStart] = useState<Date | null>(null);
+  const [availabilityRangeEnd, setAvailabilityRangeEnd] = useState<Date | null>(null);
+  const [availabilityVisibleMonth, setAvailabilityVisibleMonth] = useState(startOfMonth(new Date()));
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -93,6 +105,10 @@ export default function GigDeckScreen() {
     setBidNote(QUICK_BID);
     setCounterBid(String(task.budget));
     setAvailabilityWindow(task.date_window);
+    setAvailabilityCalendarOpen(false);
+    setAvailabilityRangeStart(null);
+    setAvailabilityRangeEnd(null);
+    setAvailabilityVisibleMonth(startOfMonth(new Date()));
   }
 
   function onSwipedLeft(cardIndex: number) {
@@ -142,6 +158,38 @@ export default function GigDeckScreen() {
     Alert.alert('Bid sent', 'If the gig starter picks you, it will appear in Hustles.');
   }
 
+  function selectAvailabilityDate(day: Date) {
+    const selected = startOfDay(day);
+
+    if (!availabilityRangeStart || availabilityRangeEnd) {
+      setAvailabilityRangeStart(selected);
+      setAvailabilityRangeEnd(null);
+      setAvailabilityWindow(formatDateLabel(selected));
+      return;
+    }
+
+    if (selected.getTime() < availabilityRangeStart.getTime()) {
+      setAvailabilityRangeStart(selected);
+      setAvailabilityRangeEnd(null);
+      setAvailabilityWindow(formatDateLabel(selected));
+      return;
+    }
+
+    setAvailabilityRangeEnd(selected);
+    setAvailabilityWindow(formatDateRange(availabilityRangeStart, selected));
+  }
+
+  function confirmClearSwipeContext() {
+    Alert.alert(
+      'Clear passed gigs?',
+      'This brings previously passed gigs back into your swipe deck.',
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes', onPress: clearSwipeContext },
+      ],
+    );
+  }
+
   useFocusEffect(
     useCallback(() => {
       return () => {
@@ -182,7 +230,7 @@ export default function GigDeckScreen() {
           </View>
         </View>
 
-        <View className="flex-1 px-4 pb-4">
+        <View className="flex-1 px-6 pb-5">
           {hasVisibleCard ? (
             <Swiper
               key={`${deckSignature}:${swiperResetKey}`}
@@ -242,12 +290,13 @@ export default function GigDeckScreen() {
       <Modal transparent animationType="fade" visible={Boolean(selectedTask)} onRequestClose={closeBidSheet}>
         <View className="flex-1 justify-end bg-black/75">
           <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
-          <View className={`rounded-t-[34px] border p-6 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+          <View className={`max-h-[92%] rounded-t-[34px] border ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+            <ScrollView contentContainerClassName="p-6" showsVerticalScrollIndicator={false}>
             <Text className="mb-2 text-sm font-bold text-orange-400">Counter bid</Text>
             <Text className={`mb-1 text-3xl font-black ${titleClass}`}>{selectedTask?.title}</Text>
             <Text className={`mb-5 text-sm ${mutedClass}`}>{selectedTask?.location_label}</Text>
-            <View className="mb-5 flex-row gap-3">
-              <View className="flex-1">
+            <View className="mb-5 gap-3">
+              <View>
                 <Text className={`mb-2 text-sm font-bold ${mutedClass}`}>Your bid</Text>
                 <View className={`flex-row items-center rounded-[24px] border px-4 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100'}`}>
                   <Text className={`text-xl font-black ${titleClass}`}>$</Text>
@@ -259,17 +308,30 @@ export default function GigDeckScreen() {
                   />
                 </View>
               </View>
-              <View className="flex-1">
+              <View>
                 <Text className={`mb-2 text-sm font-bold ${mutedClass}`}>Availability</Text>
-                <TextInput
-                  value={availabilityWindow}
-                  onChangeText={setAvailabilityWindow}
-                  placeholder="Optional"
-                  placeholderTextColor="#71717A"
-                  className={`rounded-[24px] border px-4 py-4 text-base ${
-                    isDark ? 'border-white/10 bg-white/10 text-white' : 'border-zinc-200 bg-zinc-100 text-zinc-950'
-                  }`}
-                />
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setAvailabilityCalendarOpen((current) => !current)}
+                  className={`min-h-14 flex-row items-center justify-between rounded-[24px] border px-4 ${
+                    isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100'
+                  }`}>
+                  <Text className={`flex-1 font-semibold ${availabilityWindow ? titleClass : mutedClass}`} numberOfLines={1}>
+                    {availabilityWindow || 'Choose a date range'}
+                  </Text>
+                  <Ionicons name={availabilityCalendarOpen ? 'chevron-up' : 'calendar'} size={20} color="#8B5CF6" />
+                </Pressable>
+                {availabilityCalendarOpen ? (
+                  <CalendarRangePicker
+                    isDark={isDark}
+                    onChangeMonth={(offset) => setAvailabilityVisibleMonth((current) => addMonths(current, offset))}
+                    onDone={() => setAvailabilityCalendarOpen(false)}
+                    onSelect={selectAvailabilityDate}
+                    rangeEnd={availabilityRangeEnd}
+                    rangeStart={availabilityRangeStart}
+                    visibleMonth={availabilityVisibleMonth}
+                  />
+                ) : null}
               </View>
             </View>
             <TextInput
@@ -293,6 +355,7 @@ export default function GigDeckScreen() {
                 style={{ flex: 1 }}
               />
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -326,7 +389,7 @@ export default function GigDeckScreen() {
                     accessibilityLabel="Clear passed gig context"
                     accessibilityRole="button"
                     disabled={swipedTaskCount === 0}
-                    onPress={clearSwipeContext}
+                    onPress={confirmClearSwipeContext}
                     className={`min-h-10 flex-row items-center justify-center gap-2 rounded-full px-4 ${
                       swipedTaskCount === 0 ? 'bg-zinc-500/20' : 'bg-violet'
                     }`}>
@@ -363,10 +426,10 @@ const styles = StyleSheet.create({
   },
   swiperCard: {
     height: '100%',
-    left: 0,
-    right: 0,
+    left: '4%',
+    right: '4%',
     top: 0,
-    width: '100%',
+    width: '92%',
   },
   leftOverlay: {
     alignItems: 'flex-end',

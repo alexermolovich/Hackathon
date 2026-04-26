@@ -9,6 +9,7 @@ type PrimaryButtonProps = {
   icon?: keyof typeof Ionicons.glyphMap;
   tone?: 'violet' | 'emerald' | 'ghost' | 'danger';
   disabled?: boolean;
+  visuallyDisabled?: boolean;
   style?: ViewStyle;
 };
 
@@ -25,13 +26,15 @@ export function PrimaryButton({
   icon,
   tone = 'violet',
   disabled,
+  visuallyDisabled,
   style,
 }: PrimaryButtonProps) {
   const { isDark } = useGigStore();
-  const ghostTextClass = disabled ? (isDark ? 'text-zinc-300' : 'text-zinc-600') : tone === 'ghost' && !isDark ? 'text-zinc-950' : 'text-white';
-  const iconColor = disabled ? (isDark ? '#D4D4D8' : '#52525B') : tone === 'ghost' && !isDark ? '#18181B' : '#FFFFFF';
+  const muted = disabled || visuallyDisabled;
+  const ghostTextClass = muted ? (isDark ? 'text-zinc-300' : 'text-zinc-600') : tone === 'ghost' && !isDark ? 'text-zinc-950' : 'text-white';
+  const iconColor = muted ? (isDark ? '#D4D4D8' : '#52525B') : tone === 'ghost' && !isDark ? '#18181B' : '#FFFFFF';
   const buttonClass =
-    disabled
+    muted
       ? isDark
         ? 'border border-white/10 bg-zinc-800'
         : 'border border-zinc-300 bg-zinc-300'

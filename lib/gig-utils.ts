@@ -1,4 +1,4 @@
-import type { Coordinates, EnrichedMatch, GigMatch, Profile, Task } from './gig-types';
+import type { Coordinates, EnrichedMatch, GigMatch, Message, Profile, Task } from './gig-types';
 
 const EARTH_RADIUS_MILES = 3958.8;
 
@@ -41,7 +41,11 @@ export function buildDeck(tasks: Task[], user: Profile, excludedTaskIds: Readonl
     .filter((task) => !excludedTaskIds.has(task.id))
     .filter((task) => task.poster_id !== user.id)
     .filter((task) => milesBetween(user.location, task.location) <= user.search_radius)
-    .filter((task) => interestedCategories.size === 0 || interestedCategories.has(task.category.toLowerCase()))
+    .filter(
+      (task) =>
+        interestedCategories.size === 0 ||
+        getTaskCategoryLabels(task).some((category) => interestedCategories.has(category.toLowerCase())),
+    )
     .sort((a, b) => milesBetween(user.location, a.location) - milesBetween(user.location, b.location));
 
   const boosted = nearby.filter((task) => task.is_boosted).slice(0, 3);
@@ -49,6 +53,10 @@ export function buildDeck(tasks: Task[], user: Profile, excludedTaskIds: Readonl
   const regular = nearby.filter((task) => !boostedIds.has(task.id));
 
   return [...boosted, ...regular];
+}
+
+export function getTaskCategoryLabels(task: Task) {
+  return Array.from(new Set([task.category, ...task.required_skills].filter(Boolean)));
 }
 
 export function enrichMatches(matches: GigMatch[], tasks: Task[], profiles: Profile[]) {
@@ -92,4 +100,39 @@ export function calculateAge(birthDate: string) {
   }
 
   return age;
+}
+
+export function hasUnseenCounterBid(match: EnrichedMatch, viewerId: string) {
+  return match.task.poster_id === viewerId && match.status !== 'completed' && !match.poster_seen_counter_at;
+}
+
+export function hasUnseenAcceptedOffer(match: EnrichedMatch, viewerId: string) {
+  return match.doer_id === viewerId && match.status === 'matched' && !match.doer_seen_match_at;
+}
+
+export function getUnreadMessageCount(match: EnrichedMatch, messages: Message[], viewerId: string) {
+  const readAt =
+    match.task.poster_id === viewerId
+      ? match.poster_read_messages_at
+      : match.doer_id === viewerId
+        ? match.doer_read_messages_at
+        : null;
+  const readTime = parseTimestamp(readAt);
+
+  return messages.filter((message) => {
+    if (message.match_id !== match.id || message.sender_id === viewerId) {
+      return false;
+    }
+
+    return parseTimestamp(message.created_at) > readTime;
+  }).length;
+}
+
+export function getUnreadMessageTotal(matches: EnrichedMatch[], messages: Message[], viewerId: string) {
+  return matches.reduce((total, match) => total + getUnreadMessageCount(match, messages, viewerId), 0);
+}
+
+function parseTimestamp(value: string | null) {
+  const timestamp = value ? Date.parse(value) : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }

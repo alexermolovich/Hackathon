@@ -4,6 +4,7 @@ import { Alert, Text, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/primary-button';
 import { useGigStore } from '@/lib/gig-store';
+import { createPersistentProfileImageRef, PROFILE_IMAGE_PICKER_OPTIONS } from '@/lib/profile-images';
 
 export function SelfieCheckGate() {
   const { profile, verifySelfie, isDark } = useGigStore();
@@ -20,18 +21,17 @@ export function SelfieCheckGate() {
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.82,
-    });
+    const result = await ImagePicker.launchImageLibraryAsync(PROFILE_IMAGE_PICKER_OPTIONS);
 
     if (result.canceled || !result.assets[0]?.uri) {
       return;
     }
 
-    await verifySelfie(result.assets[0].uri);
+    try {
+      await verifySelfie(await createPersistentProfileImageRef(result.assets[0]));
+    } catch {
+      Alert.alert('Photo save failed', 'Choose another image and try again.');
+    }
   }
 
   return (

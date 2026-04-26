@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CategorySelector } from '@/components/category-selector';
 import { PrimaryButton } from '@/components/primary-button';
 import { useGigStore } from '@/lib/gig-store';
+import { createPersistentProfileImageRef, PROFILE_IMAGE_PICKER_OPTIONS } from '@/lib/profile-images';
 import { resolveImageSource } from '@/lib/repo-images';
 import { APP_NAME, CURRENCY_NAME, EDUCATION_LEVELS, SIGNUP_BONUS_BSTS } from '@/lib/sidehustle-config';
 
@@ -152,15 +153,18 @@ export function OnboardingScreen() {
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.82,
-    });
+    const result = await ImagePicker.launchImageLibraryAsync(PROFILE_IMAGE_PICKER_OPTIONS);
 
     if (!result.canceled && result.assets[0]?.uri) {
-      setAvatarUrl(result.assets[0].uri);
+      setBusy(true);
+
+      try {
+        setAvatarUrl(await createPersistentProfileImageRef(result.assets[0]));
+      } catch {
+        Alert.alert('Photo save failed', 'Choose another image and try again.');
+      } finally {
+        setBusy(false);
+      }
     }
   }
 
