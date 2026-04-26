@@ -2,6 +2,7 @@ import { initializeApp, getApp, getApps } from 'firebase/app';
 import type { FirebaseApp } from 'firebase/app';
 import {
   browserLocalPersistence,
+  browserPopupRedirectResolver,
   getAuth,
   inMemoryPersistence,
   initializeAuth,
@@ -42,8 +43,10 @@ function createFirebaseAuth(app: FirebaseApp | null): Auth | null {
   }
 
   try {
+    const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
     return initializeAuth(app, {
-      persistence: Platform.OS === 'web' && typeof window !== 'undefined' ? browserLocalPersistence : inMemoryPersistence,
+      persistence: isWeb ? browserLocalPersistence : inMemoryPersistence,
+      popupRedirectResolver: isWeb ? browserPopupRedirectResolver : undefined,
     });
   } catch {
     return getAuth(app);

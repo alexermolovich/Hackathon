@@ -205,7 +205,6 @@ export function OnboardingScreen() {
 
       setOtp('');
       setOtpSent(true);
-      Alert.alert('Demo code ready', result.message ?? 'Use 123456 to verify this phone number.');
     } finally {
       setBusy(false);
     }
@@ -302,13 +301,6 @@ export function OnboardingScreen() {
                     onPress={() => void handleGoogle()}
                     disabled={busy}
                   />
-                  <PrimaryButton
-                    label="Skip Google, verify phone"
-                    icon="call"
-                    tone="ghost"
-                    onPress={handlePhoneOnly}
-                    disabled={busy}
-                  />
                 </View>
               </StepPanel>
             )}
@@ -339,7 +331,7 @@ export function OnboardingScreen() {
                       onChangeText={setOtp}
                       keyboardType="number-pad"
                       maxLength={6}
-                      placeholder="123456"
+                      placeholder="······"
                       placeholderTextColor="#71717A"
                       className={`${inputClass} text-center text-2xl font-black tracking-widest`}
                     />
