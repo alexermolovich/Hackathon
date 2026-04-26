@@ -36,6 +36,7 @@
       [
         "expo-image-picker",
         {
+          "cameraPermission": "SideHustle uses the camera for selfie verification.",
           "photosPermission": "SideHustle uses photos for profile pictures and gig reference images."
         }
       ],

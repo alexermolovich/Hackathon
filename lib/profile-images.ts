@@ -59,6 +59,18 @@ async function compressWebProfileImage(sourceUri: string) {
   return canvas.toDataURL(PROFILE_IMAGE_MIME_TYPE, PROFILE_IMAGE_QUALITY);
 }
 
+export async function createPersistentProfileImageRefFromUri(sourceUri: string) {
+  if (Platform.OS !== 'web') {
+    return sourceUri;
+  }
+
+  try {
+    return await compressWebProfileImage(sourceUri);
+  } catch {
+    return sourceUri;
+  }
+}
+
 export async function createPersistentProfileImageRef(asset: ImagePickerAsset) {
   const dataUri = toDataUri(asset);
 
@@ -66,15 +78,5 @@ export async function createPersistentProfileImageRef(asset: ImagePickerAsset) {
     return dataUri ?? asset.uri;
   }
 
-  const sourceUri = dataUri ?? asset.uri;
-
-  try {
-    return await compressWebProfileImage(sourceUri);
-  } catch {
-    if (dataUri) {
-      return dataUri;
-    }
-
-    throw new Error('Profile image could not be saved locally.');
-  }
+  return createPersistentProfileImageRefFromUri(dataUri ?? asset.uri);
 }

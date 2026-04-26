@@ -1,16 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
 import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
+import { SelfieCheckGate } from '@/components/selfie-check-gate';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
 import { calculateAge, initials } from '@/lib/gig-utils';
-import { createPersistentProfileImageRef, PROFILE_IMAGE_PICKER_OPTIONS } from '@/lib/profile-images';
 import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { APP_NAME, CURRENCY_NAME } from '@/lib/sidehustle-config';
@@ -27,7 +26,6 @@ type ProfileDraft = {
   bio: string;
   birthDate: string;
   educationLevel: string;
-  isVerified: boolean;
   phoneNumber: string;
   phoneVerified: boolean;
   username: string;
@@ -39,7 +37,6 @@ function buildDraft(profile: ReturnType<typeof useGigStore>['profile']): Profile
     bio: profile.bio,
     birthDate: profile.birth_date,
     educationLevel: profile.education_level ?? '',
-    isVerified: profile.is_verified,
     phoneNumber: profile.phone_number,
     phoneVerified: profile.phone_verified,
     username: profile.username,
@@ -59,6 +56,8 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
   const [birthCalendarOpen, setBirthCalendarOpen] = useState(false);
   const [birthVisibleMonth, setBirthVisibleMonth] = useState(() => startOfMonth(parseProfileDate(profile.birth_date) ?? new Date(2000, 0, 1)));
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [selfieOpen, setSelfieOpen] = useState(false);
+  const [selfieSuccessOpen, setSelfieSuccessOpen] = useState(false);
   const [draft, setDraft] = useState<ProfileDraft>(() => buildDraft(profile));
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
@@ -75,8 +74,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
       draft.educationLevel !== savedDraft.educationLevel ||
       draft.phoneNumber !== savedDraft.phoneNumber ||
       draft.phoneVerified !== savedDraft.phoneVerified ||
-      draft.username !== savedDraft.username ||
-      draft.isVerified !== savedDraft.isVerified,
+      draft.username !== savedDraft.username,
     [draft, savedDraft],
   );
 
@@ -102,7 +100,6 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
         bio: draft.bio.trim(),
         birth_date: draft.birthDate.trim(),
         education_level: educationLevel || null,
-        is_verified: draft.isVerified,
         phone_number: draft.phoneNumber.trim(),
         phone_verified: draft.phoneVerified,
         username,
@@ -114,26 +111,8 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
     }
   }
 
-  async function runPhotoEdit() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!permission.granted) {
-      Alert.alert('Photo access needed', 'Choose an image to update your profile picture.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync(PROFILE_IMAGE_PICKER_OPTIONS);
-
-    if (result.canceled || !result.assets[0]?.uri) {
-      return;
-    }
-
-    try {
-      const avatarUrl = await createPersistentProfileImageRef(result.assets[0]);
-      setDraft((current) => ({ ...current, avatarUrl, isVerified: true }));
-    } catch {
-      Alert.alert('Photo save failed', 'Choose another image and try again.');
-    }
+  function runPhotoEdit() {
+    setSelfieOpen(true);
   }
 
   function updatePhoneNumber(phoneNumber: string) {
@@ -153,8 +132,8 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
     <View className="flex-1">
       <View className={`z-10 flex-row items-center justify-between border-b px-5 pb-4 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
         <View>
-          <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-          <Text className={`text-3xl font-black ${titleClass}`}>Profile</Text>
+          <Text className="text-xs font-semibold text-orange-400">{APP_NAME}</Text>
+          <Text className={`text-2xl font-black ${titleClass}`}>Profile</Text>
         </View>
         <View className="flex-row items-center gap-2">
           <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
@@ -202,7 +181,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
                 accessibilityLabel="Change profile photo"
                 accessibilityRole="button"
                 disabled={!isEditing}
-                onPress={() => void runPhotoEdit()}
+                onPress={runPhotoEdit}
                 className={`h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-orange-400/30 bg-orange-500/15 ${
                   isEditing ? '' : 'opacity-80'
                 }`}>
@@ -216,7 +195,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
                 accessibilityLabel="Edit profile image"
                 accessibilityRole="button"
                 disabled={!isEditing}
-                onPress={() => void runPhotoEdit()}
+                onPress={runPhotoEdit}
                 className={`absolute bottom-0 right-0 h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-violet ${
                   isEditing ? '' : 'opacity-50'
                 }`}>
@@ -226,7 +205,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
             <View className="flex-1">
               <View className="mb-2 flex-row items-center gap-2">
                 <Text className={`text-sm font-bold ${mutedClass}`}>Name</Text>
-                <VerifiedBadge verified={draft.isVerified} compact />
+                <VerifiedBadge verified={profile.is_verified} compact />
               </View>
               <TextInput
                 editable={isEditing}
@@ -343,6 +322,50 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
         </View>
       </ScrollView>
 
+      <SelfieCheckGate
+        allowVerified
+        visible={selfieOpen}
+        title="Update selfie"
+        successMessage="Your selfie was verified and updated."
+        suppressSuccessNotice
+        onVerified={(avatarUrl) => {
+          setDraft((current) => ({ ...current, avatarUrl }));
+          setSelfieSuccessOpen(true);
+        }}
+        onClose={() => setSelfieOpen(false)}
+      />
+      <Modal
+        transparent
+        animationType="fade"
+        visible={selfieSuccessOpen}
+        onRequestClose={() => setSelfieSuccessOpen(false)}>
+        <View className="flex-1 items-center justify-center bg-black/80 px-5">
+          <View className={`w-full max-w-md rounded-[30px] border p-5 ${panelClass}`}>
+            <View className="mb-4 flex-row items-center justify-between">
+              <View className="h-14 w-14 items-center justify-center rounded-full bg-emerald-500">
+                <Ionicons name="checkmark" size={26} color="#FFFFFF" />
+              </View>
+              <Pressable
+                accessibilityLabel="Close selfie verified dialog"
+                accessibilityRole="button"
+                onPress={() => setSelfieSuccessOpen(false)}
+                className={`h-11 w-11 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+                <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
+              </Pressable>
+            </View>
+            <Text className={`text-2xl font-black ${titleClass}`}>Selfie verified</Text>
+            <Text className={`mt-3 text-base leading-6 ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>
+              Your selfie was verified and updated.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setSelfieSuccessOpen(false)}
+              className="mt-6 min-h-14 w-full items-center justify-center rounded-3xl bg-emerald-500 px-5">
+              <Text className="text-base font-black text-black">OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
       <BstPurchaseSheet visible={purchaseOpen} onClose={() => setPurchaseOpen(false)} />
     </View>
   );

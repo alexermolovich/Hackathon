@@ -82,7 +82,6 @@ type ProfileUpdateInput = Partial<
     | 'education_level'
     | 'accepted_terms_at'
     | 'avatar_url'
-    | 'is_verified'
   >
 >;
 
@@ -1324,7 +1323,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       avatar_url: input.avatarUrl,
       google_authenticated: true,
       phone_verified: true,
-      is_verified: Boolean(input.avatarUrl),
+      is_verified: profile.is_verified,
       is_onboarded: true,
       accepted_terms_at: now,
       signup_bonus_awarded: true,
@@ -1342,6 +1341,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     const nextProfile = {
       ...profile,
       ...input,
+      avatar_url: input.avatar_url ?? profile.avatar_url,
       skills: input.skills ?? input.interests ?? profile.skills,
     };
 

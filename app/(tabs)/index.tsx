@@ -22,6 +22,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
 import { ProfileTrigger } from '@/components/profile-trigger';
 import { RadiusSlider } from '@/components/radius-slider';
+import { SelfieCheckGate } from '@/components/selfie-check-gate';
 import { TaskCard } from '@/components/task-card';
 import { useGigStore } from '@/lib/gig-store';
 import type { Task } from '@/lib/gig-types';
@@ -59,6 +60,7 @@ export default function GigDeckScreen() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [verificationOpen, setVerificationOpen] = useState(false);
   const { width } = useWindowDimensions();
 
   const postersById = useMemo(() => new Map(profiles.map((item) => [item.id, item])), [profiles]);
@@ -166,6 +168,11 @@ export default function GigDeckScreen() {
       return;
     }
 
+    if (!profile.is_verified) {
+      setVerificationOpen(true);
+      return;
+    }
+
     const parsedCounterBid = Number(counterBid);
 
     if (!bidNote.trim() || !Number.isFinite(parsedCounterBid) || parsedCounterBid < 1) {
@@ -227,6 +234,7 @@ export default function GigDeckScreen() {
         setProfileOpen(false);
         setSettingsOpen(false);
         setPurchaseOpen(false);
+        setVerificationOpen(false);
       };
     }, []),
   );
@@ -237,8 +245,8 @@ export default function GigDeckScreen() {
         <View className={`z-20 px-5 pb-3 pt-2 ${shellClass}`}>
           <View className={`${compactHeader ? 'gap-3' : 'flex-row items-center justify-between gap-3'}`}>
             <View className={`min-w-0 ${compactHeader ? '' : 'flex-1'}`}>
-              <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-              <Text className={`text-3xl font-black ${titleClass}`} numberOfLines={1}>
+              <Text className="text-xs font-semibold text-orange-400">{APP_NAME}</Text>
+              <Text className={`text-2xl font-black ${titleClass}`} numberOfLines={1}>
                 Gigs
               </Text>
             </View>
@@ -324,8 +332,8 @@ export default function GigDeckScreen() {
           <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View className={`max-h-[92%] rounded-t-[34px] border ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
             <ScrollView contentContainerClassName="p-6" showsVerticalScrollIndicator={false}>
-            <Text className="mb-2 text-sm font-bold text-orange-400">{APP_NAME}</Text>
-            <Text className={`mb-1 text-3xl font-black ${titleClass}`}>{selectedTask?.title}</Text>
+            <Text className="mb-1 text-xs font-bold text-orange-400">{APP_NAME}</Text>
+            <Text className={`mb-1 text-2xl font-black ${titleClass}`}>{selectedTask?.title}</Text>
             <Text className={`mb-5 text-sm ${mutedClass}`}>{selectedTask?.location_label}</Text>
             <View className="mb-5 gap-3">
               <View>
@@ -398,8 +406,8 @@ export default function GigDeckScreen() {
           <View className={`max-h-[88%] rounded-t-[34px] border ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
             <View className={`z-10 flex-row items-center justify-between border-b px-5 pb-4 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
               <View>
-                <Text className="text-sm font-bold text-orange-400">{APP_NAME}</Text>
-                <Text className={`text-3xl font-black ${titleClass}`}>Tune gigs</Text>
+                <Text className="text-xs font-bold text-orange-400">{APP_NAME}</Text>
+                <Text className={`text-2xl font-black ${titleClass}`}>Tune gigs</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -449,6 +457,7 @@ export default function GigDeckScreen() {
       </Modal>
 
       <BstPurchaseSheet visible={purchaseOpen} onClose={() => setPurchaseOpen(false)} />
+      <SelfieCheckGate visible={verificationOpen} onClose={() => setVerificationOpen(false)} />
     </SafeAreaView>
   );
 }

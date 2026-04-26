@@ -2,15 +2,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { createElement, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategorySelector } from '@/components/category-selector';
 import { PrimaryButton } from '@/components/primary-button';
 import { useGigStore } from '@/lib/gig-store';
-import { createPersistentProfileImageRef, PROFILE_IMAGE_PICKER_OPTIONS } from '@/lib/profile-images';
+import {
+  createPersistentProfileImageRef,
+  createPersistentProfileImageRefFromUri,
+  PROFILE_IMAGE_PICKER_OPTIONS,
+} from '@/lib/profile-images';
 import { resolveImageSource } from '@/lib/repo-images';
 import { APP_NAME, CURRENCY_NAME, EDUCATION_LEVELS, SIGNUP_BONUS_BSTS } from '@/lib/sidehustle-config';
 
@@ -20,6 +23,17 @@ const accountSteps: OnboardingStep[] = ['identity', 'about', 'categories', 'term
 const homeLogoSource = require('../assets/images/favicon.png');
 const sloganOrange = '#F97316';
 const sloganViolet = '#8B5CF6';
+const accountPhotoCameraOptions: ImagePicker.ImagePickerOptions = {
+  ...PROFILE_IMAGE_PICKER_OPTIONS,
+  cameraType: ImagePicker.CameraType.front,
+};
+const webAvatarVideoStyle: CSSProperties = {
+  backgroundColor: '#18181B',
+  height: 260,
+  objectFit: 'cover',
+  transform: 'scaleX(-1)',
+  width: '100%',
+};
 const monthNames = [
   'January',
   'February',
@@ -139,6 +153,11 @@ export function OnboardingScreen() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatar_url);
   const [acceptedTerms, setAcceptedTerms] = useState(Boolean(profile.accepted_terms_at));
   const [busy, setBusy] = useState(false);
+  const [avatarCameraOpen, setAvatarCameraOpen] = useState(false);
+  const [avatarCameraBusy, setAvatarCameraBusy] = useState(false);
+  const [avatarCameraReady, setAvatarCameraReady] = useState(false);
+  const avatarVideoRef = useRef<HTMLVideoElement | null>(null);
+  const avatarStreamRef = useRef<MediaStream | null>(null);
 
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const panelClass = isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white';
@@ -185,15 +204,40 @@ export function OnboardingScreen() {
     }
   }, [profile.google_authenticated, profile.phone_number, profile.phone_verified, step]);
 
-  async function pickAvatar() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  useEffect(() => {
+    if (!avatarCameraOpen) {
+      stopAvatarCamera();
+      setAvatarCameraReady(false);
+    }
 
-    if (!permission.granted) {
-      Alert.alert('Photo access needed', 'Add a profile photo to finish account creation.');
+    return stopAvatarCamera;
+  }, [avatarCameraOpen]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !avatarCameraReady || !avatarVideoRef.current || !avatarStreamRef.current) {
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync(PROFILE_IMAGE_PICKER_OPTIONS);
+    avatarVideoRef.current.srcObject = avatarStreamRef.current;
+    void avatarVideoRef.current.play().catch(() => {
+      Alert.alert('Camera preview blocked', 'Press Capture Photo after the camera preview appears.');
+    });
+  }, [avatarCameraReady]);
+
+  async function pickAvatar() {
+    if (Platform.OS === 'web') {
+      setAvatarCameraOpen(true);
+      return;
+    }
+
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert('Camera access needed', 'Take a fresh profile photo to finish account creation.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync(accountPhotoCameraOptions);
 
     if (!result.canceled && result.assets[0]?.uri) {
       setBusy(true);
@@ -201,10 +245,82 @@ export function OnboardingScreen() {
       try {
         setAvatarUrl(await createPersistentProfileImageRef(result.assets[0]));
       } catch {
-        Alert.alert('Photo save failed', 'Choose another image and try again.');
+        Alert.alert('Photo save failed', 'Take another photo and try again.');
       } finally {
         setBusy(false);
       }
+    }
+  }
+
+  function stopAvatarCamera() {
+    avatarStreamRef.current?.getTracks().forEach((track) => track.stop());
+    avatarStreamRef.current = null;
+
+    if (avatarVideoRef.current) {
+      avatarVideoRef.current.srcObject = null;
+    }
+  }
+
+  async function startAvatarCamera() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      Alert.alert('Camera unavailable', 'This browser does not support direct camera capture.');
+      return;
+    }
+
+    setAvatarCameraBusy(true);
+
+    try {
+      stopAvatarCamera();
+      avatarStreamRef.current = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: 'user',
+          height: { ideal: 720 },
+          width: { ideal: 720 },
+        },
+      });
+      setAvatarCameraReady(true);
+    } catch {
+      Alert.alert('Camera access needed', 'Allow camera access to take a fresh profile photo.');
+    } finally {
+      setAvatarCameraBusy(false);
+    }
+  }
+
+  async function captureAvatarPhoto() {
+    const video = avatarVideoRef.current;
+
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      Alert.alert('Camera warming up', 'Give the camera a moment, then try again.');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      Alert.alert('Photo failed', 'The browser could not capture this photo.');
+      return;
+    }
+
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    setAvatarCameraBusy(true);
+
+    try {
+      setAvatarUrl(await createPersistentProfileImageRefFromUri(canvas.toDataURL('image/jpeg', 0.9)));
+      stopAvatarCamera();
+      setAvatarCameraReady(false);
+      setAvatarCameraOpen(false);
+    } catch {
+      Alert.alert('Photo save failed', 'Take another photo and try again.');
+    } finally {
+      setAvatarCameraBusy(false);
     }
   }
 
@@ -297,8 +413,8 @@ export function OnboardingScreen() {
         <View className={`${step === 'welcome' ? 'mb-3 justify-end' : 'mb-5 justify-between'} flex-row items-center`}>
           {step !== 'welcome' && (
             <View>
-              <Text className="text-sm font-bold text-orange-400">{APP_NAME}</Text>
-              <Text className={`text-4xl font-black ${titleClass}`}>Create Account</Text>
+              <Text className="text-xs font-bold text-orange-400">{APP_NAME}</Text>
+              <Text className={`text-2xl font-black ${titleClass}`}>Create Account</Text>
             </View>
           )}
           <Pressable
@@ -449,7 +565,7 @@ export function OnboardingScreen() {
                       Profile photo
                     </Text>
                     <Text className={`mt-1 text-sm leading-5 ${mutedClass}`}>
-                      {avatarUrl ? 'Ready for account creation' : 'Required to continue'}
+                      {avatarUrl ? 'Ready for account creation' : 'Take a fresh camera photo'}
                     </Text>
                   </View>
                 </View>
@@ -573,6 +689,55 @@ export function OnboardingScreen() {
           </>
         )}
       </ScrollView>
+      <Modal
+        transparent
+        animationType="fade"
+        visible={avatarCameraOpen}
+        onRequestClose={avatarCameraBusy ? undefined : () => setAvatarCameraOpen(false)}>
+        <View className="flex-1 justify-end bg-black/75">
+          <View className={`rounded-t-[34px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+            <View className="mb-4 flex-row items-center justify-between">
+              <View>
+                <Text className="text-xs font-bold text-orange-400">{APP_NAME}</Text>
+                <Text className={`text-2xl font-black ${titleClass}`}>Profile photo</Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close profile photo camera"
+                accessibilityRole="button"
+                disabled={avatarCameraBusy}
+                onPress={() => setAvatarCameraOpen(false)}
+                className={`h-11 w-11 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+                <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
+              </Pressable>
+            </View>
+            <Text className={`mb-4 text-sm leading-5 ${mutedClass}`}>
+              Take a fresh camera photo. Gallery uploads are not allowed here.
+            </Text>
+            {avatarCameraReady ? (
+              <View className={`mb-5 overflow-hidden rounded-[28px] border ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100'}`}>
+                {createElement('video', {
+                  autoPlay: true,
+                  muted: true,
+                  playsInline: true,
+                  ref: avatarVideoRef,
+                  style: webAvatarVideoStyle,
+                })}
+                {avatarCameraBusy ? (
+                  <View className="absolute inset-0 items-center justify-center bg-black/45">
+                    <ActivityIndicator color="#FFFFFF" size="large" />
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+            <PrimaryButton
+              label={avatarCameraBusy ? 'Opening Camera' : avatarCameraReady ? 'Capture Photo' : 'Open Camera'}
+              icon={avatarCameraBusy ? undefined : 'camera'}
+              onPress={() => void (avatarCameraReady ? captureAvatarPhoto() : startAvatarCamera())}
+              disabled={avatarCameraBusy}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

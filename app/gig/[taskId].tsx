@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
 import { PrimaryButton } from '@/components/primary-button';
+import { SelfieCheckGate } from '@/components/selfie-check-gate';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
 import { formatDistance, getTaskCategoryLabels } from '@/lib/gig-utils';
@@ -17,6 +19,7 @@ export default function GigDetailScreen() {
   const { taskId } = useLocalSearchParams<{ taskId?: string | string[] }>();
   const router = useRouter();
   const { profile, profiles, tasks, matches, isDark } = useGigStore();
+  const [verificationOpen, setVerificationOpen] = useState(false);
   const resolvedTaskId = Array.isArray(taskId) ? taskId[0] : taskId;
   const task = tasks.find((item) => item.id === resolvedTaskId);
   const poster = task ? profiles.find((item) => item.id === task.poster_id) : null;
@@ -39,6 +42,15 @@ export default function GigDetailScreen() {
     }
 
     router.replace('/');
+  }
+
+  function openChat(matchId: string) {
+    if (!profile.is_verified) {
+      setVerificationOpen(true);
+      return;
+    }
+
+    router.push({ pathname: '/chat/[matchId]', params: { matchId } });
   }
 
   if (!task || !poster) {
@@ -65,8 +77,8 @@ export default function GigDetailScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2">
         <View className="mb-5 flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>{task.status === 'archived' ? 'Finished Gig' : 'Gig'}</Text>
+            <Text className="text-xs font-semibold text-orange-400">{APP_NAME}</Text>
+            <Text className={`text-2xl font-black ${titleClass}`}>{task.status === 'archived' ? 'Finished Gig' : 'Gig'}</Text>
           </View>
           <Pressable
             accessibilityLabel="Close gig"
@@ -172,15 +184,17 @@ export default function GigDetailScreen() {
           )}
 
           {myMatch?.status === 'matched' ? (
-            <Link href={{ pathname: '/chat/[matchId]', params: { matchId: myMatch.id } }} asChild>
-              <Pressable accessibilityRole="button" className="mt-4 min-h-12 flex-row items-center justify-center gap-2 rounded-3xl bg-violet px-5">
-                <Ionicons name="chatbubbles" size={18} color="#FFFFFF" />
-                <Text className="text-sm font-bold text-white">Open Chat</Text>
-              </Pressable>
-            </Link>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => openChat(myMatch.id)}
+              className="mt-4 min-h-12 flex-row items-center justify-center gap-2 rounded-3xl bg-violet px-5">
+              <Ionicons name="chatbubbles" size={18} color="#FFFFFF" />
+              <Text className="text-sm font-bold text-white">Open Chat</Text>
+            </Pressable>
           ) : null}
         </View>
       </ScrollView>
+      <SelfieCheckGate visible={verificationOpen} onClose={() => setVerificationOpen(false)} />
     </SafeAreaView>
   );
 }

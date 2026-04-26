@@ -10,6 +10,7 @@ import { Avatar } from '@/components/avatar';
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
 import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
+import { SelfieCheckGate } from '@/components/selfie-check-gate';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
@@ -25,6 +26,7 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchaseReason, setPurchaseReason] = useState<string | undefined>();
+  const [verificationOpen, setVerificationOpen] = useState(false);
 
   const match = matches.find((item) => item.id === matchId);
   const threadMessages = useMemo(
@@ -59,7 +61,20 @@ export default function ChatScreen() {
   const participant = activeMatch.doer_id === profile.id ? activeMatch.poster : activeMatch.doer;
   const revealParticipant = !locked || !isDoer;
 
+  function requireVerified() {
+    if (profile.is_verified) {
+      return true;
+    }
+
+    setVerificationOpen(true);
+    return false;
+  }
+
   async function handleUnlock() {
+    if (!requireVerified()) {
+      return;
+    }
+
     const ok = await unlockChat(activeMatch.id);
 
     if (!ok) {
@@ -71,6 +86,10 @@ export default function ChatScreen() {
   }
 
   function confirmUnlock() {
+    if (!requireVerified()) {
+      return;
+    }
+
     Alert.alert(
       'Unlock chat?',
       `Spend ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME} to reveal this thread and message the Gigachad?`,
@@ -82,6 +101,10 @@ export default function ChatScreen() {
   }
 
   async function handleSend() {
+    if (!requireVerified()) {
+      return;
+    }
+
     await sendMessage(activeMatch.id, draft);
     setDraft('');
   }
@@ -159,7 +182,7 @@ export default function ChatScreen() {
               editable={!locked}
               value={draft}
               onChangeText={setDraft}
-              placeholder={locked ? 'Unlock chat to reply' : 'Message'}
+              placeholder={locked ? 'Unlock chat to reply' : profile.is_verified ? 'Message' : 'Verify to reply'}
               placeholderTextColor="#71717A"
               className={`min-h-12 flex-1 rounded-3xl border px-4 text-base ${
                 isDark ? 'border-white/10 bg-white/10 text-white' : 'border-zinc-200 bg-white text-zinc-950'
@@ -181,6 +204,7 @@ export default function ChatScreen() {
           reason={purchaseReason}
           onClose={() => setPurchaseOpen(false)}
         />
+        <SelfieCheckGate visible={verificationOpen} onClose={() => setVerificationOpen(false)} />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

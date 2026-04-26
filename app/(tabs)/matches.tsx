@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
-import { Link, useFocusEffect } from 'expo-router';
+import { Link, router, useFocusEffect } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -13,6 +13,7 @@ import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
 import { ProfileTrigger } from '@/components/profile-trigger';
+import { SelfieCheckGate } from '@/components/selfie-check-gate';
 import { StarRating } from '@/components/star-rating';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Profile } from '@/lib/gig-types';
@@ -41,6 +42,7 @@ export default function MatchesScreen() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sectionTouched, setSectionTouched] = useState(false);
+  const [verificationOpen, setVerificationOpen] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<HustlesSection, boolean>>({
     ready: true,
     pending: false,
@@ -70,7 +72,20 @@ export default function MatchesScreen() {
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
 
+  function requireVerified() {
+    if (profile.is_verified) {
+      return true;
+    }
+
+    setVerificationOpen(true);
+    return false;
+  }
+
   async function handleUnlock(matchId: string) {
+    if (!requireVerified()) {
+      return;
+    }
+
     const ok = await unlockChat(matchId);
 
     if (!ok) {
@@ -82,6 +97,10 @@ export default function MatchesScreen() {
   }
 
   function confirmUnlock(match: EnrichedMatch) {
+    if (!requireVerified()) {
+      return;
+    }
+
     Alert.alert(
       'Unlock this hustle?',
       `Spend ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME} to reveal the Gigachad and open chat for "${match.task.title}"?`,
@@ -93,6 +112,10 @@ export default function MatchesScreen() {
   }
 
   async function handleRate(matchId: string, rating: number) {
+    if (!requireVerified()) {
+      return;
+    }
+
     const ok = await rateMatch(matchId, rating);
 
     if (!ok) {
@@ -101,6 +124,10 @@ export default function MatchesScreen() {
   }
 
   function confirmCompletionRequest(match: EnrichedMatch) {
+    if (!requireVerified()) {
+      return;
+    }
+
     Alert.alert(
       'Mark this hustle complete?',
       `This asks ${match.poster.username || 'the Gigachad'} to confirm before it becomes completed.`,
@@ -169,8 +196,8 @@ export default function MatchesScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2">
         <View className="mb-6 flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>Hustles</Text>
+            <Text className="text-xs font-semibold text-orange-400">{APP_NAME}</Text>
+            <Text className={`text-2xl font-black ${titleClass}`}>Hustles</Text>
           </View>
           <View className="flex-row items-center gap-2">
             <CreditBadge
@@ -207,6 +234,11 @@ export default function MatchesScreen() {
                 match={match}
                 newAcceptance={hasUnseenAcceptedOffer(match, profile.id)}
                 unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
+                onChat={() => {
+                  if (requireVerified()) {
+                    router.push({ pathname: '/chat/[matchId]', params: { matchId: match.id } });
+                  }
+                }}
                 onUnlock={() => confirmUnlock(match)}
                 onComplete={() => confirmCompletionRequest(match)}
               />
@@ -256,6 +288,7 @@ export default function MatchesScreen() {
         reason={purchaseReason}
         onClose={() => setPurchaseOpen(false)}
       />
+      <SelfieCheckGate visible={verificationOpen} onClose={() => setVerificationOpen(false)} />
     </SafeAreaView>
   );
 }
@@ -336,12 +369,14 @@ function SearchField({
 function HustleCard({
   match,
   newAcceptance,
+  onChat,
   onUnlock,
   onComplete,
   unreadMessageCount,
 }: {
   match: EnrichedMatch;
   newAcceptance: boolean;
+  onChat: () => void;
   onUnlock: () => void;
   onComplete: () => void;
   unreadMessageCount: number;
@@ -398,12 +433,13 @@ function HustleCard({
 
       {reveal ? (
         <View className="mt-3 flex-row gap-2">
-          <Link href={{ pathname: '/chat/[matchId]', params: { matchId: match.id } }} asChild>
-            <Pressable accessibilityRole="button" className="min-h-10 flex-1 flex-row items-center justify-center gap-2 rounded-full bg-violet px-4">
-              <Ionicons name="chatbubbles" size={16} color="#FFFFFF" />
-              <Text className="text-xs font-bold text-white">Chat</Text>
-            </Pressable>
-          </Link>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onChat}
+            className="min-h-10 flex-1 flex-row items-center justify-center gap-2 rounded-full bg-violet px-4">
+            <Ionicons name="chatbubbles" size={16} color="#FFFFFF" />
+            <Text className="text-xs font-bold text-white">Chat</Text>
+          </Pressable>
           <PrimaryButton
             label={completionRequested ? 'Waiting' : 'Complete'}
             icon={completionRequested ? 'time' : 'checkmark'}

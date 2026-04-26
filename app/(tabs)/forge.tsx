@@ -11,6 +11,7 @@ import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
 import { ProfileTrigger } from '@/components/profile-trigger';
+import { SelfieCheckGate } from '@/components/selfie-check-gate';
 import { TaskComposer } from '@/components/task-composer';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Task } from '@/lib/gig-types';
@@ -24,6 +25,7 @@ import { APP_NAME, CURRENCY_NAME, SEE_MORE_BIDDERS_COST_BSTS } from '@/lib/sideh
 
 type ForgeView = 'applicants' | 'posted' | 'archived';
 type SortMode = 'bid' | 'date' | 'rating' | 'experience';
+type TaskSortMode = 'newest' | 'budget' | 'boost' | 'bids';
 
 const sortOptions: {
   caption: string;
@@ -35,6 +37,18 @@ const sortOptions: {
   { caption: 'Best availability', icon: 'calendar', label: 'Date', mode: 'date' },
   { caption: 'Highest rated', icon: 'star', label: 'Rating', mode: 'rating' },
   { caption: 'Most completed', icon: 'medal', label: 'Experience', mode: 'experience' },
+];
+
+const taskSortOptions: {
+  caption: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  mode: TaskSortMode;
+}[] = [
+  { caption: 'Newest first', icon: 'time', label: 'New', mode: 'newest' },
+  { caption: 'Highest budget', icon: 'cash', label: 'Budget', mode: 'budget' },
+  { caption: 'Boosted first', icon: 'flame', label: 'Boost', mode: 'boost' },
+  { caption: 'Most bids', icon: 'people', label: 'Bids', mode: 'bids' },
 ];
 
 export default function ForgeScreen() {
@@ -57,10 +71,32 @@ export default function ForgeScreen() {
   const [activeView, setActiveView] = useState<ForgeView>('applicants');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('bid');
+  const [taskSortMode, setTaskSortMode] = useState<TaskSortMode>('newest');
+  const [verifiedHustlersOnly, setVerifiedHustlersOnly] = useState(false);
+  const [verificationOpen, setVerificationOpen] = useState(false);
 
   const myTasks = tasks.filter((task) => task.poster_id === profile.id);
   const archivedTasks = myTasks.filter((task) => task.status === 'archived');
   const openTasks = myTasks.filter((task) => task.status === 'open');
+  const taskBidCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    matches.forEach((match) => {
+      if (match.task.poster_id === profile.id && match.status !== 'completed') {
+        counts.set(match.task.id, (counts.get(match.task.id) ?? 0) + 1);
+      }
+    });
+
+    return counts;
+  }, [matches, profile.id]);
+  const sortedOpenTasks = useMemo(
+    () => sortForgeTasks(openTasks, taskSortMode, taskBidCounts),
+    [openTasks, taskBidCounts, taskSortMode],
+  );
+  const sortedArchivedTasks = useMemo(
+    () => sortForgeTasks(archivedTasks, taskSortMode, taskBidCounts),
+    [archivedTasks, taskBidCounts, taskSortMode],
+  );
   const applicantMatches = useMemo(() => {
     const mine = matches.filter((match) => match.task.poster_id === profile.id && match.status !== 'completed');
 
@@ -81,16 +117,19 @@ export default function ForgeScreen() {
     });
   }, [matches, profile.id, sortMode]);
   const filteredApplicantMatches = useMemo(
-    () => applicantMatches.filter((match) => applicantMatchesQuery(match, searchQuery)),
-    [applicantMatches, searchQuery],
+    () =>
+      applicantMatches.filter(
+        (match) => applicantMatchesQuery(match, searchQuery) && (!verifiedHustlersOnly || match.doer.is_verified),
+      ),
+    [applicantMatches, searchQuery, verifiedHustlersOnly],
   );
   const filteredOpenTasks = useMemo(
-    () => openTasks.filter((task) => taskMatchesQuery(task, searchQuery)),
-    [openTasks, searchQuery],
+    () => sortedOpenTasks.filter((task) => taskMatchesQuery(task, searchQuery)),
+    [sortedOpenTasks, searchQuery],
   );
   const filteredArchivedTasks = useMemo(
-    () => archivedTasks.filter((task) => taskMatchesQuery(task, searchQuery)),
-    [archivedTasks, searchQuery],
+    () => sortedArchivedTasks.filter((task) => taskMatchesQuery(task, searchQuery)),
+    [sortedArchivedTasks, searchQuery],
   );
   const biddersUnlocked = Boolean(profile.bidder_access_unlocked_at);
   const visibleApplicantMatches = useMemo(
@@ -106,12 +145,29 @@ export default function ForgeScreen() {
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
 
+  function requireVerified() {
+    if (profile.is_verified) {
+      return true;
+    }
+
+    setVerificationOpen(true);
+    return false;
+  }
+
   function pickHustler(matchId: string) {
+    if (!requireVerified()) {
+      return;
+    }
+
     void likeBack(matchId);
     router.push({ pathname: '/chat/[matchId]', params: { matchId } });
   }
 
   function confirmPick(match: EnrichedMatch) {
+    if (!requireVerified()) {
+      return;
+    }
+
     Alert.alert(
       'Select this hustler?',
       `Are you sure you want to select ${match.doer.username} for "${match.task.title}" at $${match.counter_bid}?`,
@@ -123,6 +179,10 @@ export default function ForgeScreen() {
   }
 
   function confirmComplete(match: EnrichedMatch) {
+    if (!requireVerified()) {
+      return;
+    }
+
     Alert.alert(
       'Complete this gig?',
       `Confirm ${match.doer.username} finished "${match.task.title}" for $${match.counter_bid}?`,
@@ -134,6 +194,10 @@ export default function ForgeScreen() {
   }
 
   async function handleUnlockBidders() {
+    if (!requireVerified()) {
+      return;
+    }
+
     const ok = await unlockAllBidders();
 
     if (!ok) {
@@ -145,6 +209,10 @@ export default function ForgeScreen() {
   }
 
   function confirmUnlockBidders() {
+    if (!requireVerified()) {
+      return;
+    }
+
     Alert.alert(
       'See all bidders?',
       `Spend ${SEE_MORE_BIDDERS_COST_BSTS} ${CURRENCY_NAME} to unlock every bidder for your gigs.`,
@@ -205,8 +273,8 @@ export default function ForgeScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2">
         <View className="mb-5 flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>GigHub</Text>
+            <Text className="text-xs font-semibold text-orange-400">{APP_NAME}</Text>
+            <Text className={`text-2xl font-black ${titleClass}`}>GigHub</Text>
           </View>
           <View className="flex-row items-center gap-2">
             <CreditBadge
@@ -228,7 +296,11 @@ export default function ForgeScreen() {
           />
           <Pressable
             accessibilityRole="button"
-            onPress={() => setComposerOpen(true)}
+            onPress={() => {
+              if (requireVerified()) {
+                setComposerOpen(true);
+              }
+            }}
             className="min-h-11 flex-row items-center justify-center gap-1.5 rounded-[20px] bg-orange-500 px-4">
             <Ionicons name="add" size={18} color="#FFFFFF" />
             <Text className="text-xs font-black text-white">Create</Text>
@@ -243,10 +315,23 @@ export default function ForgeScreen() {
 
         {activeView === 'applicants' && (
           <View>
-            <SortControl active={sortMode} onChange={setSortMode} />
+            <SortControl
+              active={sortMode}
+              onChange={setSortMode}
+              onVerifiedOnlyChange={setVerifiedHustlersOnly}
+              verifiedOnly={verifiedHustlersOnly}
+            />
 
             {filteredApplicantMatches.length === 0 ? (
-              <EmptyState copy={searchQuery.trim() ? 'No matching hustlers or gigs found.' : 'Counter bids from hustlers land here after they swipe right on your gigs.'} />
+              <EmptyState
+                copy={
+                  verifiedHustlersOnly
+                    ? 'No verified hustlers match this view yet.'
+                    : searchQuery.trim()
+                      ? 'No matching hustlers or gigs found.'
+                      : 'Counter bids from hustlers land here after they swipe right on your gigs.'
+                }
+              />
             ) : (
               <>
                 {visibleApplicantMatches.map((match) => (
@@ -255,6 +340,11 @@ export default function ForgeScreen() {
                     match={match}
                     newCounterBid={hasUnseenCounterBid(match, profile.id)}
                     unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
+                    onChat={() => {
+                      if (requireVerified()) {
+                        router.push({ pathname: '/chat/[matchId]', params: { matchId: match.id } });
+                      }
+                    }}
                     onComplete={() => confirmComplete(match)}
                     onPick={() => confirmPick(match)}
                   />
@@ -269,16 +359,38 @@ export default function ForgeScreen() {
 
         {activeView === 'posted' && (
           <View>
+            <TaskSortControl
+              active={taskSortMode}
+              onChange={setTaskSortMode}
+              onVerify={() => setVerificationOpen(true)}
+              verified={profile.is_verified}
+            />
             {filteredOpenTasks.length === 0 ? (
               <EmptyState copy={searchQuery.trim() ? 'No matching posted gigs found.' : 'Open gigs you create will appear here.'} />
             ) : (
-              filteredOpenTasks.map((task) => <PostedGigCard key={task.id} task={task} onPress={() => setEditingTask(task)} />)
+              filteredOpenTasks.map((task) => (
+                <PostedGigCard
+                  key={task.id}
+                  task={task}
+                  onPress={() => {
+                    if (requireVerified()) {
+                      setEditingTask(task);
+                    }
+                  }}
+                />
+              ))
             )}
           </View>
         )}
 
         {activeView === 'archived' && (
           <View>
+            <TaskSortControl
+              active={taskSortMode}
+              onChange={setTaskSortMode}
+              onVerify={() => setVerificationOpen(true)}
+              verified={profile.is_verified}
+            />
             {filteredArchivedTasks.length === 0 ? (
               <EmptyState copy={searchQuery.trim() ? 'No matching archived gigs found.' : 'Finished or archived gigs will appear here.'} />
             ) : (
@@ -317,6 +429,7 @@ export default function ForgeScreen() {
         reason={purchaseReason}
         onClose={() => setPurchaseOpen(false)}
       />
+      <SelfieCheckGate visible={verificationOpen} onClose={() => setVerificationOpen(false)} />
     </SafeAreaView>
   );
 }
@@ -353,11 +466,22 @@ function SearchField({
   );
 }
 
-function SortControl({ active, onChange }: { active: SortMode; onChange: (mode: SortMode) => void }) {
+function SortControl({
+  active,
+  onChange,
+  onVerifiedOnlyChange,
+  verifiedOnly,
+}: {
+  active: SortMode;
+  onChange: (mode: SortMode) => void;
+  onVerifiedOnlyChange: (value: boolean) => void;
+  verifiedOnly: boolean;
+}) {
   const { isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const activeOption = sortOptions.find((option) => option.mode === active);
+  const filterThumbLeft = verifiedOnly ? '50%' : '0%';
 
   return (
     <View className="mb-3">
@@ -365,7 +489,7 @@ function SortControl({ active, onChange }: { active: SortMode; onChange: (mode: 
         <Text className={`text-sm font-black ${titleClass}`}>Sort Hustlers</Text>
         <Text className={`text-xs font-semibold ${mutedClass}`}>{activeOption?.caption}</Text>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pr-2">
+      <View className={`flex-row rounded-[24px] border p-1 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
         {sortOptions.map((option) => {
           const selected = active === option.mode;
 
@@ -374,21 +498,125 @@ function SortControl({ active, onChange }: { active: SortMode; onChange: (mode: 
               key={option.mode}
               accessibilityRole="button"
               onPress={() => onChange(option.mode)}
-              className={`min-h-10 flex-row items-center gap-1.5 rounded-full border px-3 ${
+              className={`min-h-10 flex-1 items-center justify-center rounded-[20px] ${
                 selected
-                  ? 'border-violet bg-violet'
-                  : isDark
-                    ? 'border-white/10 bg-white/10'
-                    : 'border-zinc-200 bg-zinc-100'
+                  ? 'bg-violet'
+                  : 'bg-transparent'
               }`}>
-              <Ionicons name={option.icon} size={15} color={selected ? '#FFFFFF' : '#8B5CF6'} />
-              <Text className={`text-xs font-black ${selected || isDark ? 'text-white' : 'text-zinc-950'}`}>
+              <Ionicons name={option.icon} size={16} color={selected ? '#FFFFFF' : '#8B5CF6'} />
+              <Text className={`mt-0.5 text-[10px] font-black ${selected || isDark ? 'text-white' : 'text-zinc-950'}`} numberOfLines={1}>
                 {option.label}
               </Text>
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
+      <View className="mt-2 flex-row items-center gap-2">
+        <View className={`min-h-10 flex-1 flex-row items-center gap-2 rounded-[20px] border px-3 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
+          <Ionicons name="shield-checkmark" size={16} color="#8B5CF6" />
+          <Text className={`text-xs font-black ${titleClass}`}>Hustler filter</Text>
+        </View>
+        <View className={`relative h-10 w-36 flex-row overflow-hidden rounded-[20px] border p-1 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
+          <View
+            pointerEvents="none"
+            className="absolute bottom-1 top-1 rounded-[16px] bg-violet"
+            style={{ left: filterThumbLeft as `${number}%`, width: '50%' as `${number}%` }}
+          />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onVerifiedOnlyChange(false)}
+            className="min-h-8 flex-1 items-center justify-center rounded-[16px]">
+            <Text className={`text-[10px] font-black ${!verifiedOnly || isDark ? 'text-white' : 'text-zinc-950'}`}>
+              All
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onVerifiedOnlyChange(true)}
+            className="min-h-8 flex-1 items-center justify-center rounded-[16px]">
+            <Text className={`text-[10px] font-black ${verifiedOnly || isDark ? 'text-white' : 'text-zinc-950'}`}>
+              Verified
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function TaskSortControl({
+  active,
+  onChange,
+  onVerify,
+  verified,
+}: {
+  active: TaskSortMode;
+  onChange: (mode: TaskSortMode) => void;
+  onVerify: () => void;
+  verified: boolean;
+}) {
+  const { isDark } = useGigStore();
+  const titleClass = isDark ? 'text-white' : 'text-zinc-950';
+  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+  const activeOption = taskSortOptions.find((option) => option.mode === active);
+  const activeIndex = Math.max(0, taskSortOptions.findIndex((option) => option.mode === active));
+  const sliderStep = 100 / taskSortOptions.length;
+  const sliderThumbLeft = `${activeIndex * sliderStep}%` as `${number}%`;
+  const sliderThumbWidth = `${sliderStep}%` as `${number}%`;
+
+  if (!verified) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        onPress={onVerify}
+        className={`mb-3 flex-row items-center gap-3 rounded-[22px] border px-4 py-3 ${
+          isDark ? 'border-orange-400/30 bg-orange-500/10' : 'border-orange-200 bg-orange-50'
+        }`}>
+        <View className="h-10 w-10 items-center justify-center rounded-full bg-orange-500">
+          <Ionicons name="shield-checkmark" size={19} color="#FFFFFF" />
+        </View>
+        <View className="flex-1">
+          <Text className={`text-sm font-black ${titleClass}`}>Verify to sort gigs</Text>
+          <Text className={`text-xs font-semibold ${mutedClass}`} numberOfLines={1}>
+            Sort by newest, budget, boost, or bids.
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color="#F97316" />
+      </Pressable>
+    );
+  }
+
+  return (
+    <View className="mb-3">
+      <View className="mb-2 flex-row items-center justify-between">
+        <Text className={`text-sm font-black ${titleClass}`}>Sort Gigs</Text>
+        <Text className={`text-xs font-semibold ${mutedClass}`}>{activeOption?.caption}</Text>
+      </View>
+      <View className={`relative flex-row overflow-hidden rounded-[24px] border p-1 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
+        <View
+          pointerEvents="none"
+          className="absolute bottom-1 top-1 rounded-[20px] bg-orange-500"
+          style={{ left: sliderThumbLeft, width: sliderThumbWidth }}
+        />
+        {taskSortOptions.map((option) => {
+          const selected = active === option.mode;
+
+          return (
+            <Pressable
+              key={option.mode}
+              accessibilityRole="button"
+              onPress={() => onChange(option.mode)}
+              className="min-h-10 flex-1 items-center justify-center rounded-[20px]">
+              <Ionicons name={option.icon} size={16} color={selected ? '#FFFFFF' : '#F97316'} />
+              <Text
+                className={`mt-0.5 text-[10px] font-black ${selected || isDark ? 'text-white' : 'text-zinc-950'}`}
+                numberOfLines={1}>
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -420,12 +648,14 @@ function ViewButton({
 function ApplicantCard({
   match,
   newCounterBid,
+  onChat,
   onComplete,
   onPick,
   unreadMessageCount,
 }: {
   match: EnrichedMatch;
   newCounterBid: boolean;
+  onChat: () => void;
   onComplete: () => void;
   onPick: () => void;
   unreadMessageCount: number;
@@ -490,9 +720,7 @@ function ApplicantCard({
 
   if (match.status === 'matched' && !completionRequested) {
     return (
-      <Link href={{ pathname: '/chat/[matchId]', params: { matchId: match.id } }} asChild>
-        <Pressable accessibilityRole="button">{content}</Pressable>
-      </Link>
+      <Pressable accessibilityRole="button" onPress={onChat}>{content}</Pressable>
     );
   }
 
@@ -611,6 +839,28 @@ function taskMatchesQuery(task: Task, query: string) {
     task.status,
     task.is_boosted ? 'boosted' : 'not boosted',
   ]);
+}
+
+function sortForgeTasks(tasks: Task[], mode: TaskSortMode, bidCounts: Map<string, number>) {
+  return [...tasks].sort((a, b) => {
+    if (mode === 'budget') {
+      return b.budget - a.budget;
+    }
+
+    if (mode === 'boost') {
+      if (a.is_boosted !== b.is_boosted) {
+        return a.is_boosted ? -1 : 1;
+      }
+
+      return b.boost_days - a.boost_days;
+    }
+
+    if (mode === 'bids') {
+      return (bidCounts.get(b.id) ?? 0) - (bidCounts.get(a.id) ?? 0);
+    }
+
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 }
 
 function Metric({

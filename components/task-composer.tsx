@@ -17,6 +17,7 @@ import {
 } from '@/components/calendar-range-picker';
 import { CategorySelector } from '@/components/category-selector';
 import { PrimaryButton } from '@/components/primary-button';
+import { SelfieCheckGate } from '@/components/selfie-check-gate';
 import type { Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
 import { approximateLocationLabel } from '@/lib/geo';
@@ -59,6 +60,7 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
   const [imageUrls, setImageUrls] = useState<string[]>(task?.image_urls ?? []);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [publishAttempted, setPublishAttempted] = useState(false);
+  const [verificationOpen, setVerificationOpen] = useState(false);
 
   const boostCost = useMemo(
     () => (isBoosted ? getBoostCost(boostDays) : 0),
@@ -210,6 +212,11 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
   }
 
   async function submitTask() {
+    if (!profile.is_verified) {
+      setVerificationOpen(true);
+      return;
+    }
+
     if (!canPublish) {
       setPublishAttempted(true);
       Alert.alert('Missing details', `Add: ${missingFieldLabels.join(', ')}.`);
@@ -256,8 +263,8 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
       <View className={`z-10 border-b pb-4 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
         <View className="flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>{isEditing ? 'Edit gig' : 'Create gig'}</Text>
+            <Text className="text-xs font-semibold text-orange-400">{APP_NAME}</Text>
+            <Text className={`text-2xl font-black ${titleClass}`}>{isEditing ? 'Edit gig' : 'Create gig'}</Text>
           </View>
           {onClose ? (
             <Pressable
@@ -465,6 +472,7 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
         reason={`You don't have enough ${CURRENCY_NAME} for this boost. You need ${boostCharge || boostCost} ${CURRENCY_NAME} to continue.`}
         onClose={() => setPurchaseOpen(false)}
       />
+      <SelfieCheckGate visible={verificationOpen} onClose={() => setVerificationOpen(false)} />
     </>
   );
 }
