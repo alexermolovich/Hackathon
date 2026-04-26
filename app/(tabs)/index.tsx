@@ -44,6 +44,7 @@ export default function GigDeckScreen() {
     clearSwipeContext,
   } = useGigStore();
   const swiperRef = useRef<Swiper<Task>>(null);
+  const activeCardAdvanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [swiperResetKey, setSwiperResetKey] = useState(0);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -58,7 +59,7 @@ export default function GigDeckScreen() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
-  const { height, width } = useWindowDimensions();
+  const { width } = useWindowDimensions();
 
   const postersById = useMemo(() => new Map(profiles.map((item) => [item.id, item])), [profiles]);
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
@@ -67,15 +68,33 @@ export default function GigDeckScreen() {
   const panelClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white';
   const deckSignature = useMemo(() => deck.map((task) => task.id).join('|'), [deck]);
   const hasVisibleCard = activeCardIndex < deck.length;
+  const nextPreviewTask = hasVisibleCard ? deck[activeCardIndex + 1] ?? null : null;
+  const nextPreviewPoster = nextPreviewTask ? postersById.get(nextPreviewTask.poster_id) ?? profile : null;
   const compactHeader = width < 390;
-  const deckBottomPadding = Math.max(96, Math.min(128, height * 0.14));
+  const deckBottomPadding = 20;
   const emptyTitle = deck.length === 0 ? 'No gigs in range' : "You're all caught up";
   const emptyMessage =
     deck.length === 0 ? 'Adjust proximity or categories to open up the deck.' : 'Check back soon or widen your filters for more gigs.';
 
   useEffect(() => {
+    clearPendingActiveCardAdvance();
     setActiveCardIndex(0);
   }, [deckSignature]);
+
+  function clearPendingActiveCardAdvance() {
+    if (activeCardAdvanceTimeoutRef.current) {
+      clearTimeout(activeCardAdvanceTimeoutRef.current);
+      activeCardAdvanceTimeoutRef.current = null;
+    }
+  }
+
+  function scheduleActiveCardAdvance(cardIndex: number) {
+    clearPendingActiveCardAdvance();
+    activeCardAdvanceTimeoutRef.current = setTimeout(() => {
+      setActiveCardIndex(cardIndex + 1);
+      activeCardAdvanceTimeoutRef.current = null;
+    }, 0);
+  }
 
   function handlePass() {
     if (!hasVisibleCard) {
@@ -102,6 +121,7 @@ export default function GigDeckScreen() {
       return;
     }
 
+    scheduleActiveCardAdvance(cardIndex);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSelectedTask(task);
     setSelectedTaskIndex(cardIndex);
@@ -115,6 +135,7 @@ export default function GigDeckScreen() {
   }
 
   function onSwipedLeft(cardIndex: number) {
+    clearPendingActiveCardAdvance();
     const task = deck[cardIndex];
 
     if (task) {
@@ -125,6 +146,7 @@ export default function GigDeckScreen() {
   }
 
   function closeBidSheet() {
+    clearPendingActiveCardAdvance();
     const restoreIndex =
       selectedTaskIndex !== null && deck[selectedTaskIndex]?.id === selectedTask?.id
         ? selectedTaskIndex
@@ -199,6 +221,7 @@ export default function GigDeckScreen() {
   useFocusEffect(
     useCallback(() => {
       return () => {
+        clearPendingActiveCardAdvance();
         setSelectedTask(null);
         setSelectedTaskIndex(null);
         setProfileOpen(false);
@@ -235,51 +258,55 @@ export default function GigDeckScreen() {
           </View>
         </View>
 
-        <View className="mt-2 flex-1 px-6" style={[styles.deckViewport, { paddingBottom: deckBottomPadding }]}>
+        <View className="mt-4 flex-1 px-6" style={[styles.deckViewport, { paddingBottom: deckBottomPadding }]}>
           {hasVisibleCard ? (
-            <Swiper
-              key={`${deckSignature}:${swiperResetKey}`}
-              ref={swiperRef}
-              cards={deck}
-              renderCard={(task?: Task) => {
-                if (!task) {
-                  return null;
-                }
+            <>
+              {nextPreviewTask && nextPreviewPoster ? (
+                <View pointerEvents="none" style={[styles.nextCardPreview, { bottom: deckBottomPadding }]}>
+                  <TaskCard task={nextPreviewTask} poster={nextPreviewPoster} onPass={handlePass} onBid={handleBid} />
+                </View>
+              ) : null}
+              <Swiper
+                key={`${deckSignature}:${swiperResetKey}`}
+                ref={swiperRef}
+                cards={deck}
+                renderCard={(task?: Task) => {
+                  if (!task) {
+                    return null;
+                  }
 
-                const poster = postersById.get(task.poster_id) ?? profile;
+                  const poster = postersById.get(task.poster_id) ?? profile;
 
-                return <TaskCard task={task} poster={poster} onPass={handlePass} onBid={handleBid} />;
-              }}
-              onSwipedLeft={onSwipedLeft}
-              onSwipedRight={onSwipedRight}
-              onSwiped={(cardIndex) => setActiveCardIndex(cardIndex + 1)}
-              cardIndex={activeCardIndex}
-              backgroundColor="transparent"
-              stackSize={2}
-              stackScale={7}
-              stackSeparation={14}
-              verticalSwipe={false}
-              horizontalThreshold={90}
-              animateOverlayLabelsOpacity
-              containerStyle={{ ...styles.swiperContainer, bottom: deckBottomPadding }}
-              cardStyle={styles.swiperCard}
-              overlayLabels={{
-                left: {
-                  title: 'PASS',
-                  style: {
-                    label: styles.passLabel,
-                    wrapper: styles.leftOverlay,
+                  return <TaskCard task={task} poster={poster} onPass={handlePass} onBid={handleBid} />;
+                }}
+                onSwipedLeft={onSwipedLeft}
+                onSwipedRight={onSwipedRight}
+                cardIndex={activeCardIndex}
+                backgroundColor="transparent"
+                stackSize={1}
+                verticalSwipe={false}
+                horizontalThreshold={90}
+                animateOverlayLabelsOpacity
+                containerStyle={{ ...styles.swiperContainer, bottom: deckBottomPadding }}
+                cardStyle={styles.swiperCard}
+                overlayLabels={{
+                  left: {
+                    title: 'PASS',
+                    style: {
+                      label: styles.passLabel,
+                      wrapper: styles.leftOverlay,
+                    },
                   },
-                },
-                right: {
-                  title: 'BID',
-                  style: {
-                    label: styles.bidLabel,
-                    wrapper: styles.rightOverlay,
+                  right: {
+                    title: 'BID',
+                    style: {
+                      label: styles.bidLabel,
+                      wrapper: styles.rightOverlay,
+                    },
                   },
-                },
-              }}
-            />
+                }}
+              />
+            </>
           ) : (
             <View className={`flex-1 items-center justify-center rounded-[32px] border px-8 ${panelClass}`}>
               <View className="mb-5 h-20 w-20 items-center justify-center rounded-full bg-violet/20">
@@ -432,8 +459,17 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 0,
   },
+  nextCardPreview: {
+    left: '4%',
+    position: 'absolute',
+    right: '4%',
+    top: 0,
+    width: '92%',
+    zIndex: 0,
+  },
   swiperContainer: {
     flex: 1,
+    zIndex: 1,
   },
   swiperCard: {
     height: '100%',

@@ -362,7 +362,7 @@ function SortControl({ active, onChange }: { active: SortMode; onChange: (mode: 
   return (
     <View className="mb-3">
       <View className="mb-2 flex-row items-center justify-between">
-        <Text className={`text-sm font-black ${titleClass}`}>Sort applicants</Text>
+        <Text className={`text-sm font-black ${titleClass}`}>Sort Hustlers</Text>
         <Text className={`text-xs font-semibold ${mutedClass}`}>{activeOption?.caption}</Text>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pr-2">

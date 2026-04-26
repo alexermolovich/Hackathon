@@ -4,8 +4,8 @@ export const GIG_NAME_PLURAL = 'Gigs';
 export const CURRENCY_NAME = 'BSTs';
 export const CURRENCY_FULL_NAME = 'Blood & Sweat Tokens';
 
-export const SIGNUP_BONUS_BSTS = 200;
-export const CHAT_UNLOCK_COST_BSTS = 10;
+export const SIGNUP_BONUS_BSTS = 50;
+export const CHAT_UNLOCK_COST_BSTS = 25;
 export const SEE_MORE_BIDDERS_COST_BSTS = 30;
 
 export const BOOST_OPTIONS = [
