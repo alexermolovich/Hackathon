@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { createElement, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategorySelector } from '@/components/category-selector';
@@ -27,6 +28,65 @@ const accountPhotoCameraOptions: ImagePicker.ImagePickerOptions = {
   ...PROFILE_IMAGE_PICKER_OPTIONS,
   cameraType: ImagePicker.CameraType.front,
 };
+const termsSections = [
+  {
+    heading: '1. The SideHustle Model (Platform Role)',
+    body: [
+      'SideHustle is a digital marketplace and lead-generation tool designed to connect individuals seeking to have tasks completed ("Gig Owners") with individuals willing to complete them ("Hustlers").',
+      'We Are Not an Employer: SideHustle is not an employer, broker, agent, or joint venturer of any User. We do not provide the services requested in Gigs.',
+      'We Are a Venue: We solely provide the software to facilitate introductions. The actual agreement for services is a direct contract between the Gig Owner and the Hustler.',
+    ],
+  },
+  {
+    heading: '2. Independent Contractor Acknowledgment',
+    body: [
+      'By using the Platform to provide services as a Hustler, you explicitly acknowledge and agree that you are operating as an independent business or independent contractor, not an employee of SideHustle.',
+      'SideHustle does not dictate your working hours, your methods, or the specific tools you use.',
+      'You are free to accept or reject any Gig by swiping left or right, with no penalty from SideHustle.',
+      'You are solely responsible for negotiating the final scope, time, and payment of the Gig directly with the Gig Owner.',
+    ],
+  },
+  {
+    heading: '3. Blood & Sweat Tokens (BSTs) & In-App Economy',
+    body: [
+      'To unlock premium platform features, such as boosting a Gig, viewing additional Hustler bids, or unlocking a chat, users may utilize Blood & Sweat Tokens ("BSTs").',
+      'Digital License Only: BSTs are a limited, non-exclusive, non-transferable digital license to access specific features within the Platform.',
+      'No Cash Value: BSTs are not a fiat currency, do not accrue interest, and hold no real-world monetary value. They cannot be sold, transferred outside the app, or redeemed for USD or any other fiat currency from SideHustle.',
+      'Purchases are Final: All fiat purchases of BSTs are final and non-refundable, subject to applicable App Store or Google Play Store policies.',
+    ],
+  },
+  {
+    heading: '4. Payments Between Users',
+    body: [
+      'SideHustle does not process, hold, or guarantee fiat payments for the completion of Gigs.',
+      'Direct Settlement: Gig Owners and Hustlers must arrange payment for services rendered directly between themselves, such as via cash, Venmo, Zelle, or other peer-to-peer methods.',
+      'Tax Liability: Users are entirely responsible for tracking and reporting their own income and paying all applicable local, state, and federal taxes. SideHustle does not withhold taxes or issue W-2s.',
+    ],
+  },
+  {
+    heading: '5. User Conduct and Safety (Compliance)',
+    body: [
+      'As a marketplace, we prioritize trust, but Users interact at their own risk.',
+      'Work Authorization: It is the responsibility of the Gig Owner to verify that any Hustler they hire has the legal authorization to work in their respective jurisdiction. SideHustle does not conduct I-9 verification.',
+      'Legality of Gigs: Users may not post or accept Gigs that involve illegal acts, highly regulated services requiring unverified licenses, or hazardous materials.',
+    ],
+  },
+  {
+    heading: '6. Limitation of Liability & "Negligent Referral" Shield',
+    body: [
+      'To the maximum extent permitted by law, SideHustle and its founders shall not be liable for any indirect, incidental, or consequential damages arising from the use of the Platform or the performance of any Gig.',
+      'SideHustle does not guarantee the quality, safety, or legality of the Gigs posted, nor the qualifications or background of the Hustlers.',
+      'Any dispute regarding property damage, personal injury, or incomplete work must be resolved directly between the Gig Owner and the Hustler. SideHustle is entirely indemnified from such claims.',
+    ],
+  },
+  {
+    heading: '7. Mandatory Arbitration',
+    body: [
+      'Any dispute, claim, or controversy arising out of or relating to these Terms or the breach thereof shall be settled by binding arbitration, rather than in court.',
+      'You agree to waive any right to participate in a class-action lawsuit against SideHustle.',
+    ],
+  },
+];
 const webAvatarVideoStyle: CSSProperties = {
   backgroundColor: '#18181B',
   height: 260,
@@ -152,6 +212,8 @@ export function OnboardingScreen() {
   const [interests, setInterests] = useState<string[]>(profile.interests);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatar_url);
   const [acceptedTerms, setAcceptedTerms] = useState(Boolean(profile.accepted_terms_at));
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsScrolledToEnd, setTermsScrolledToEnd] = useState(false);
   const [busy, setBusy] = useState(false);
   const [avatarCameraOpen, setAvatarCameraOpen] = useState(false);
   const [avatarCameraBusy, setAvatarCameraBusy] = useState(false);
@@ -212,6 +274,13 @@ export function OnboardingScreen() {
 
     return stopAvatarCamera;
   }, [avatarCameraOpen]);
+
+  useEffect(() => {
+    if (step === 'terms' && !acceptedTerms) {
+      setTermsScrolledToEnd(false);
+      setTermsOpen(true);
+    }
+  }, [acceptedTerms, step]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !avatarCameraReady || !avatarVideoRef.current || !avatarStreamRef.current) {
@@ -380,6 +449,31 @@ export function OnboardingScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function openTerms() {
+    setTermsScrolledToEnd(false);
+    setTermsOpen(true);
+  }
+
+  function handleTermsScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const scrolledToEnd = layoutMeasurement.height + contentOffset.y >= contentSize.height - 28;
+
+    if (scrolledToEnd) {
+      setTermsScrolledToEnd(true);
+    }
+  }
+
+  function acceptTerms() {
+    setAcceptedTerms(true);
+    setTermsOpen(false);
+  }
+
+  function declineTerms() {
+    setAcceptedTerms(false);
+    setTermsOpen(false);
+    Alert.alert('Terms required', `You must accept the ${APP_NAME} Terms of Service before account creation can finish.`);
   }
 
   async function submit() {
@@ -656,18 +750,25 @@ export function OnboardingScreen() {
               <StepPanel panelClass={panelClass}>
                 <Text className={`mb-5 text-3xl font-black ${titleClass}`}>Finish</Text>
                 <View className={`mb-5 rounded-[28px] border p-4 ${softClass}`}>
-                  <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: acceptedTerms }}
-                    onPress={() => setAcceptedTerms((current) => !current)}
-                    className="flex-row items-start gap-3">
-                    <View className={`mt-0.5 h-6 w-6 items-center justify-center rounded-md border ${acceptedTerms ? 'border-violet bg-violet' : 'border-zinc-400'}`}>
-                      {acceptedTerms && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                  <View className="mb-4 flex-row items-start gap-3">
+                    <View className={`mt-0.5 h-8 w-8 items-center justify-center rounded-full ${acceptedTerms ? 'bg-emerald-500' : 'bg-orange-500'}`}>
+                      <Ionicons name={acceptedTerms ? 'checkmark' : 'document-text'} size={17} color="#FFFFFF" />
                     </View>
-                    <Text className={`flex-1 text-sm leading-5 ${mutedClass}`}>
-                      I accept the terms and conditions for {APP_NAME}.
-                    </Text>
-                  </Pressable>
+                    <View className="flex-1">
+                      <Text className={`text-base font-black ${titleClass}`}>SideHustle Terms of Service</Text>
+                      <Text className={`mt-1 text-sm leading-5 ${mutedClass}`}>
+                        {acceptedTerms
+                          ? 'Accepted. You can finish account creation.'
+                          : 'Review the Terms, scroll to the bottom, then accept before account creation can finish.'}
+                      </Text>
+                    </View>
+                  </View>
+                  <PrimaryButton
+                    label={acceptedTerms ? 'Review Terms' : 'Open Terms'}
+                    icon="document-text"
+                    tone={acceptedTerms ? 'ghost' : 'orange'}
+                    onPress={openTerms}
+                  />
                 </View>
                 <View className="mb-4 flex-row items-center justify-center gap-2">
                   <Ionicons name="flame" size={18} color="#F97316" />
@@ -689,6 +790,20 @@ export function OnboardingScreen() {
           </>
         )}
       </ScrollView>
+      <TermsOfServiceModal
+        accepted={acceptedTerms}
+        isDark={isDark}
+        mutedClass={mutedClass}
+        onAccept={acceptTerms}
+        onDecline={declineTerms}
+        onScroll={handleTermsScroll}
+        onClose={() => setTermsOpen(false)}
+        panelClass={panelClass}
+        scrolledToEnd={termsScrolledToEnd}
+        softClass={softClass}
+        titleClass={titleClass}
+        visible={termsOpen}
+      />
       <Modal
         transparent
         animationType="fade"
@@ -803,6 +918,103 @@ function StepActions({
       <PrimaryButton label="Back" icon="arrow-back" tone="ghost" onPress={back} style={{ flex: 1 }} />
       <PrimaryButton label="Continue" icon="arrow-forward" onPress={next} disabled={nextDisabled} style={{ flex: 1 }} />
     </View>
+  );
+}
+
+function TermsOfServiceModal({
+  accepted,
+  isDark,
+  mutedClass,
+  onAccept,
+  onClose,
+  onDecline,
+  onScroll,
+  panelClass,
+  scrolledToEnd,
+  softClass,
+  titleClass,
+  visible,
+}: {
+  accepted: boolean;
+  isDark: boolean;
+  mutedClass: string;
+  onAccept: () => void;
+  onClose: () => void;
+  onDecline: () => void;
+  onScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  panelClass: string;
+  scrolledToEnd: boolean;
+  softClass: string;
+  titleClass: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
+      <View className="flex-1 bg-black/80 px-4 py-5">
+        <View className={`flex-1 overflow-hidden rounded-[32px] border ${panelClass}`}>
+          <View className={`border-b px-5 pb-4 pt-5 ${isDark ? 'border-white/10' : 'border-zinc-200'}`}>
+            <View className="flex-row items-start justify-between gap-3">
+              <View className="flex-1">
+                <Text className="text-xs font-bold text-orange-400">{APP_NAME}</Text>
+                <Text className={`text-2xl font-black ${titleClass}`}>Terms of Service</Text>
+                <Text className={`mt-1 text-xs font-semibold ${mutedClass}`}>Last updated: April 26, 2026</Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close terms of service"
+                accessibilityRole="button"
+                onPress={onClose}
+                className={`h-11 w-11 items-center justify-center rounded-full ${softClass}`}>
+                <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
+              </Pressable>
+            </View>
+          </View>
+
+          <ScrollView
+            className="flex-1"
+            contentContainerClassName="px-5 py-5"
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator>
+            <Text className={`mb-4 text-base leading-6 ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+              {'Welcome to SideHustle. These Terms of Service ("Terms") govern your access to and use of the SideHustle mobile application and related services (the "Platform"). By creating an account or using the Platform, you agree to these Terms.'}
+            </Text>
+            {termsSections.map((section) => (
+              <View key={section.heading} className="mb-5">
+                <Text className={`mb-2 text-lg font-black ${titleClass}`}>{section.heading}</Text>
+                {section.body.map((paragraph) => (
+                  <Text key={paragraph} className={`mb-3 text-sm leading-6 ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                    {paragraph}
+                  </Text>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+
+          <View className={`border-t px-5 py-4 ${isDark ? 'border-white/10' : 'border-zinc-200'}`}>
+            {!accepted && (
+              <Text className={`mb-3 text-center text-xs font-bold ${scrolledToEnd ? 'text-emerald-500' : mutedClass}`}>
+                {scrolledToEnd ? 'Ready to accept.' : 'Scroll to the bottom to enable Accept.'}
+              </Text>
+            )}
+            {accepted ? (
+              <PrimaryButton label="Done" icon="checkmark" tone="emerald" onPress={onClose} />
+            ) : (
+              <View className="flex-row gap-3">
+                <PrimaryButton label="Decline" icon="close" tone="ghost" onPress={onDecline} style={{ flex: 1 }} />
+                <PrimaryButton
+                  label="Accept"
+                  icon="checkmark"
+                  tone="emerald"
+                  onPress={onAccept}
+                  disabled={!scrolledToEnd}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 

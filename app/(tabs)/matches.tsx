@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { Link, router, useFocusEffect } from 'expo-router';
-import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,11 +42,7 @@ export default function MatchesScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sectionTouched, setSectionTouched] = useState(false);
   const [verificationOpen, setVerificationOpen] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Record<HustlesSection, boolean>>({
-    ready: true,
-    pending: false,
-    finished: false,
-  });
+  const [activeSection, setActiveSection] = useState<HustlesSection>('ready');
 
   const readyHustles = matches.filter((match) => match.doer_id === profile.id && match.status === 'matched');
   const pendingBids = matches.filter((match) => match.doer_id === profile.id && match.status === 'pending');
@@ -138,29 +133,45 @@ export default function MatchesScreen() {
     );
   }
 
-  function toggleSection(section: HustlesSection) {
+  function chooseSection(section: HustlesSection) {
     setSectionTouched(true);
-    setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
+    setActiveSection(section);
   }
 
   function updateSearchQuery(value: string) {
     setSearchQuery(value);
 
     if (!value.trim()) {
-      setSectionTouched(true);
-      setExpandedSections({ ready: false, pending: false, finished: false });
+      setSectionTouched(false);
     }
   }
 
   useEffect(() => {
     if (searchQuery.trim()) {
-      const hasAnyMatch = filteredReadyHustles.length > 0 || filteredPendingBids.length > 0 || filteredCompleted.length > 0;
+      const activeCount =
+        activeSection === 'ready'
+          ? filteredReadyHustles.length
+          : activeSection === 'pending'
+            ? filteredPendingBids.length
+            : filteredCompleted.length;
 
-      setExpandedSections({
-        ready: filteredReadyHustles.length > 0 || !hasAnyMatch,
-        pending: filteredPendingBids.length > 0,
-        finished: filteredCompleted.length > 0,
-      });
+      if (activeCount > 0) {
+        return;
+      }
+
+      if (filteredReadyHustles.length > 0) {
+        setActiveSection('ready');
+        return;
+      }
+
+      if (filteredPendingBids.length > 0) {
+        setActiveSection('pending');
+        return;
+      }
+
+      if (filteredCompleted.length > 0) {
+        setActiveSection('finished');
+      }
       return;
     }
 
@@ -168,12 +179,9 @@ export default function MatchesScreen() {
       return;
     }
 
-    setExpandedSections({
-      ready: readyHustles.length > 0 || pendingBids.length === 0,
-      pending: readyHustles.length === 0 && pendingBids.length > 0,
-      finished: false,
-    });
+    setActiveSection(readyHustles.length > 0 ? 'ready' : pendingBids.length > 0 ? 'pending' : 'finished');
   }, [
+    activeSection,
     filteredCompleted.length,
     filteredPendingBids.length,
     filteredReadyHustles.length,
@@ -219,60 +227,57 @@ export default function MatchesScreen() {
           />
         </View>
 
-        <CollapsibleSection
-          count={filteredReadyHustles.length}
-          expanded={expandedSections.ready}
-          icon="lock-open"
-          onToggle={() => toggleSection('ready')}
-          title="Ready to unlock">
-          {filteredReadyHustles.length === 0 ? (
-            <EmptyState copy={searchQuery.trim() ? 'No matching ready hustles found.' : 'When a Gigachad picks your counter bid, the hustle lands here.'} />
-          ) : (
-            filteredReadyHustles.map((match) => (
-              <HustleCard
-                key={match.id}
-                match={match}
-                newAcceptance={hasUnseenAcceptedOffer(match, profile.id)}
-                unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
-                onChat={() => {
-                  if (requireVerified()) {
-                    router.push({ pathname: '/chat/[matchId]', params: { matchId: match.id } });
-                  }
-                }}
-                onUnlock={() => confirmUnlock(match)}
-                onComplete={() => confirmCompletionRequest(match)}
-              />
-            ))
-          )}
-        </CollapsibleSection>
+        <View className={`mb-5 flex-row rounded-[26px] border p-1 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
+          <ViewButton title="Ready" count={filteredReadyHustles.length} active={activeSection === 'ready'} onPress={() => chooseSection('ready')} />
+          <ViewButton title="Pending" count={filteredPendingBids.length} active={activeSection === 'pending'} onPress={() => chooseSection('pending')} />
+          <ViewButton title="Finished" count={filteredCompleted.length} active={activeSection === 'finished'} onPress={() => chooseSection('finished')} />
+        </View>
 
-        <CollapsibleSection
-          count={filteredPendingBids.length}
-          expanded={expandedSections.pending}
-          icon="time"
-          onToggle={() => toggleSection('pending')}
-          title="Pending bids">
-          {filteredPendingBids.length === 0 ? (
-            <EmptyState copy={searchQuery.trim() ? 'No matching pending bids found.' : 'Your right-swipe bids wait here until the Gigachad picks you.'} />
-          ) : (
-            filteredPendingBids.map((match) => <PendingBid key={match.id} match={match} />)
-          )}
-        </CollapsibleSection>
+        {activeSection === 'ready' && (
+          <View>
+            {filteredReadyHustles.length === 0 ? (
+              <EmptyState copy={searchQuery.trim() ? 'No matching ready hustles found.' : 'When a Gigachad picks your counter bid, the hustle lands here.'} />
+            ) : (
+              filteredReadyHustles.map((match) => (
+                <HustleCard
+                  key={match.id}
+                  match={match}
+                  newAcceptance={hasUnseenAcceptedOffer(match, profile.id)}
+                  unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
+                  onChat={() => {
+                    if (requireVerified()) {
+                      router.push({ pathname: '/chat/[matchId]', params: { matchId: match.id } });
+                    }
+                  }}
+                  onUnlock={() => confirmUnlock(match)}
+                  onComplete={() => confirmCompletionRequest(match)}
+                />
+              ))
+            )}
+          </View>
+        )}
 
-        <CollapsibleSection
-          count={filteredCompleted.length}
-          expanded={expandedSections.finished}
-          icon="medal"
-          onToggle={() => toggleSection('finished')}
-          title="Finished hustles">
-          {filteredCompleted.length === 0 ? (
-            <EmptyState copy={searchQuery.trim() ? 'No matching finished hustles found.' : 'Completed gigs become Hustles Completed on your profile.'} />
-          ) : (
-            filteredCompleted.map((match) => (
-              <CompletedHustleCard key={match.id} match={match} onRate={(rating) => void handleRate(match.id, rating)} />
-            ))
-          )}
-        </CollapsibleSection>
+        {activeSection === 'pending' && (
+          <View>
+            {filteredPendingBids.length === 0 ? (
+              <EmptyState copy={searchQuery.trim() ? 'No matching pending bids found.' : 'Your right-swipe bids wait here until the Gigachad picks you.'} />
+            ) : (
+              filteredPendingBids.map((match) => <PendingBid key={match.id} match={match} />)
+            )}
+          </View>
+        )}
+
+        {activeSection === 'finished' && (
+          <View>
+            {filteredCompleted.length === 0 ? (
+              <EmptyState copy={searchQuery.trim() ? 'No matching finished hustles found.' : 'Completed gigs become Hustles Completed on your profile.'} />
+            ) : (
+              filteredCompleted.map((match) => (
+                <CompletedHustleCard key={match.id} match={match} onRate={(rating) => void handleRate(match.id, rating)} />
+              ))
+            )}
+          </View>
+        )}
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={profileOpen} onRequestClose={() => setProfileOpen(false)}>
@@ -293,44 +298,27 @@ export default function MatchesScreen() {
   );
 }
 
-function CollapsibleSection({
-  children,
-  count,
-  expanded,
-  icon,
-  onToggle,
+function ViewButton({
   title,
+  count,
+  active,
+  onPress,
 }: {
-  children: ReactNode;
-  count: number;
-  expanded: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  onToggle: () => void;
   title: string;
+  count: number;
+  active: boolean;
+  onPress: () => void;
 }) {
   const { isDark } = useGigStore();
 
   return (
-    <View className="mb-3">
-      <Pressable
-        accessibilityRole="button"
-        onPress={onToggle}
-        className={`min-h-12 flex-row items-center justify-between rounded-[20px] border px-4 ${
-          isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'
-        }`}>
-        <View className="flex-row items-center gap-2">
-          <Ionicons name={icon} size={17} color="#A78BFA" />
-          <Text className={`text-base font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>{title}</Text>
-        </View>
-        <View className="flex-row items-center gap-2">
-          <Text className={`rounded-full px-2.5 py-1 text-xs font-bold ${isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-700'}`}>
-            {count}
-          </Text>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={isDark ? '#FFFFFF' : '#18181B'} />
-        </View>
-      </Pressable>
-      {expanded ? <View className="pt-3">{children}</View> : null}
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      className={`min-h-12 flex-1 items-center justify-center rounded-[22px] ${active ? 'bg-violet' : 'bg-transparent'}`}>
+      <Text className={`text-sm font-black ${active || isDark ? 'text-white' : 'text-zinc-950'}`}>{title}</Text>
+      <Text className={`text-xs font-bold ${active || isDark ? 'text-white/80' : 'text-zinc-500'}`}>{count}</Text>
+    </Pressable>
   );
 }
 
