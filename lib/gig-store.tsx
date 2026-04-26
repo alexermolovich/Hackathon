@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import type { PropsWithChildren } from 'react';
@@ -116,7 +117,7 @@ type GigStoreValue = {
   authUserName: string | null;
   isDark: boolean;
   colorMode: 'light' | 'dark';
-  celebratedMatchId: string | null;
+  swipedTaskCount: number;
   createTask: (input: CreateTaskInput) => Promise<boolean>;
   updateTask: (taskId: string, input: UpdateTaskInput) => Promise<boolean>;
   submitBid: (task: Task, input: BidInput) => Promise<GigMatch>;
@@ -124,6 +125,7 @@ type GigStoreValue = {
   likeBack: (matchId: string) => Promise<void>;
   unlockChat: (matchId: string) => Promise<boolean>;
   completeMatch: (matchId: string) => Promise<void>;
+  rateMatch: (matchId: string, rating: number) => Promise<boolean>;
   sendMessage: (matchId: string, content: string) => Promise<void>;
   verifySelfie: (avatarUri: string) => Promise<void>;
   startPhoneOnlyAuth: () => StoreActionResult;
@@ -139,38 +141,20 @@ type GigStoreValue = {
   updateLocation: (coords: Coordinates) => void;
   toggleColorMode: () => void;
   logout: () => void;
-  clearCelebration: () => void;
+  rememberSwipedTask: (taskId: string) => void;
+  clearSwipeContext: () => void;
 };
 
 const GigStoreContext = createContext<GigStoreValue | null>(null);
 const TASK_LOCATION_MESSAGE_PREFIX = 'Gig location:';
+const SWIPE_CONTEXT_STORAGE_PREFIX = 'sidehustle:swipe-context:';
 
-function buildTaskMapsUrl(task: Task) {
-  const { latitude, longitude } = task.location;
-  return `https://www.google.com/maps/search/?api=1&query=${latitude.toFixed(6)},${longitude.toFixed(6)}`;
-}
-
-function buildTaskLocationMessage(task: Task) {
-  return `${TASK_LOCATION_MESSAGE_PREFIX} ${task.location_label} ${buildTaskMapsUrl(task)}`;
+function swipeContextStorageKey(profileId: string) {
+  return `${SWIPE_CONTEXT_STORAGE_PREFIX}${profileId}`;
 }
 
 function dedupeLocationMessages(items: Message[]) {
-  const seenLocationMessages = new Set<string>();
-
-  return items.filter((message) => {
-    if (!message.content.startsWith(TASK_LOCATION_MESSAGE_PREFIX)) {
-      return true;
-    }
-
-    const key = `${message.match_id}:${message.sender_id}:${message.content}`;
-
-    if (seenLocationMessages.has(key)) {
-      return false;
-    }
-
-    seenLocationMessages.add(key);
-    return true;
-  });
+  return items.filter((message) => !message.content.startsWith(TASK_LOCATION_MESSAGE_PREFIX));
 }
 
 function todayKey() {
@@ -188,6 +172,34 @@ function getStringArray(value: unknown) {
 function getNumber(value: unknown, fallback: number) {
   const nextValue = Number(value);
   return Number.isFinite(nextValue) ? nextValue : fallback;
+}
+
+function getOptionalNumber(value: unknown) {
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) ? nextValue : null;
+}
+
+function normalizeRating(value: number) {
+  return Math.min(5, Math.max(1, Math.round(value)));
+}
+
+function applyReceivedRating(profile: Profile, rating: number, previousRating: number | null) {
+  const count = Math.max(0, profile.rating_count);
+
+  if (previousRating !== null && count > 0) {
+    return {
+      ...profile,
+      rating: (profile.rating * count - previousRating + rating) / count,
+    };
+  }
+
+  const nextCount = count + 1;
+
+  return {
+    ...profile,
+    rating: (profile.rating * count + rating) / nextCount,
+    rating_count: nextCount,
+  };
 }
 
 function getAuthDisplayName(user: User) {
@@ -254,6 +266,7 @@ function buildProfileFromRow(id: string, row?: Record<string, unknown> | null, c
     vouch_count: getNumber(row?.vouch_count, current.vouch_count),
     posted_vouch_count: getNumber(row?.posted_vouch_count, current.posted_vouch_count),
     rating: getNumber(row?.rating, current.rating),
+    rating_count: getNumber(row?.rating_count, current.rating_count),
   };
 }
 
@@ -311,6 +324,7 @@ function buildPrivateProfileRecord(profile: Profile) {
     vouch_count: profile.vouch_count,
     posted_vouch_count: profile.posted_vouch_count,
     rating: profile.rating,
+    rating_count: profile.rating_count,
     updated_at: new Date().toISOString(),
   };
 }
@@ -322,7 +336,7 @@ function buildPublicProfileRecord(profile: Profile) {
     bio: profile.bio,
     skills: profile.skills,
     interests: profile.interests,
-    location: profile.location,
+    location: null,
     search_radius: profile.search_radius,
     is_verified: profile.is_verified,
     is_onboarded: profile.is_onboarded,
@@ -331,6 +345,7 @@ function buildPublicProfileRecord(profile: Profile) {
     vouch_count: profile.vouch_count,
     posted_vouch_count: profile.posted_vouch_count,
     rating: profile.rating,
+    rating_count: profile.rating_count,
     updated_at: new Date().toISOString(),
   };
 }
@@ -365,7 +380,7 @@ export function GigProvider({ children }: PropsWithChildren) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [matches, setMatches] = useState<GigMatch[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [celebratedMatchId, setCelebratedMatchId] = useState<string | null>(null);
+  const [swipedTaskIds, setSwipedTaskIds] = useState<string[]>([]);
   const [colorMode, setColorMode] = useState<'light' | 'dark'>(systemScheme === 'light' ? 'light' : 'dark');
   const [authLoading, setAuthLoading] = useState(hasFirebaseConfig);
   const [authUserEmail, setAuthUserEmail] = useState<string | null>(null);
@@ -455,7 +470,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       if (firebaseDb && profile.google_authenticated) {
         await setDoc(doc(firebaseDb, 'profiles', profile.id), { location: coords }, { merge: true });
         if (profile.is_onboarded) {
-          await setDoc(doc(firebaseDb, 'public_profiles', profile.id), { location: coords }, { merge: true });
+          await setDoc(doc(firebaseDb, 'public_profiles', profile.id), { location: null }, { merge: true });
         }
       }
     } catch {
@@ -523,6 +538,8 @@ export function GigProvider({ children }: PropsWithChildren) {
         availability_window: getString(row.availability_window),
         is_unlocked: Boolean(row.is_unlocked),
         status,
+        doer_rating_by_poster: getOptionalNumber(row.doer_rating_by_poster),
+        poster_rating_by_doer: getOptionalNumber(row.poster_rating_by_doer),
         created_at: toIsoString(row.created_at),
       };
     },
@@ -540,10 +557,10 @@ export function GigProvider({ children }: PropsWithChildren) {
     [],
   );
 
-  const mapFirebaseProfile = useCallback(
-    (id: string, row: Record<string, unknown>): Profile => buildProfileFromRow(id, row),
-    [],
-  );
+  const mapFirebaseProfile = useCallback((id: string, row: Record<string, unknown>): Profile => {
+    const { location: _location, ...publicRow } = row;
+    return buildProfileFromRow(id, publicRow);
+  }, []);
 
   useEffect(() => {
     const auth = firebaseAuth;
@@ -584,6 +601,32 @@ export function GigProvider({ children }: PropsWithChildren) {
   }, [requestCurrentLocation]);
 
   useEffect(() => {
+    let active = true;
+
+    setSwipedTaskIds([]);
+
+    void AsyncStorage.getItem(swipeContextStorageKey(profile.id))
+      .then((storedValue) => {
+        if (!active || !storedValue) {
+          return;
+        }
+
+        const parsed = JSON.parse(storedValue) as unknown;
+        const ids = getStringArray(parsed);
+        setSwipedTaskIds(Array.from(new Set(ids)));
+      })
+      .catch(() => {
+        if (active) {
+          setSwipedTaskIds([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [profile.id]);
+
+  useEffect(() => {
     const database = firebaseDb;
 
     if (!hasFirebaseConfig || !database || !profile.google_authenticated) {
@@ -614,12 +657,6 @@ export function GigProvider({ children }: PropsWithChildren) {
       (snapshot) => {
         const incoming = snapshot.docs.map((item) => mapFirebaseMatch({ id: item.id, ...item.data() }));
         setMatches(mergeMatches([], incoming));
-
-        incoming.forEach((nextMatch) => {
-          if (nextMatch.status === 'matched' && nextMatch.doer_id === profile.id) {
-            setCelebratedMatchId(nextMatch.id);
-          }
-        });
       },
     );
 
@@ -647,7 +684,18 @@ export function GigProvider({ children }: PropsWithChildren) {
     profile,
   ]);
 
-  const deck = useMemo(() => buildDeck(tasks, profile), [profile, tasks]);
+  const excludedDeckTaskIds = useMemo(() => {
+    const ids = new Set(swipedTaskIds);
+
+    matches.forEach((match) => {
+      if (match.doer_id === profile.id) {
+        ids.add(match.task_id);
+      }
+    });
+
+    return ids;
+  }, [matches, profile.id, swipedTaskIds]);
+  const deck = useMemo(() => buildDeck(tasks, profile, excludedDeckTaskIds), [excludedDeckTaskIds, profile, tasks]);
   const enrichedMatches = useMemo(() => enrichMatches(matches, tasks, profiles), [matches, profiles, tasks]);
   const isAccountReady = useMemo(() => isProfileAppReady(profile), [profile]);
 
@@ -761,6 +809,8 @@ export function GigProvider({ children }: PropsWithChildren) {
       availability_window: input.availabilityWindow.trim(),
       is_unlocked: false,
       status: 'pending',
+      doer_rating_by_poster: null,
+      poster_rating_by_doer: null,
       created_at: new Date().toISOString(),
     };
 
@@ -783,11 +833,12 @@ export function GigProvider({ children }: PropsWithChildren) {
       availability_window: input.availabilityWindow.trim(),
       is_unlocked: false,
       status: 'matched',
+      doer_rating_by_poster: null,
+      poster_rating_by_doer: null,
       created_at: new Date().toISOString(),
     };
 
     setMatches((current) => [match, ...current]);
-    setCelebratedMatchId(match.id);
 
     if (firebaseDb) {
       await setDoc(doc(firebaseDb, 'matches', match.id), buildMatchRecord(match, task));
@@ -800,7 +851,6 @@ export function GigProvider({ children }: PropsWithChildren) {
     setMatches((current) =>
       current.map((match) => (match.id === matchId ? { ...match, status: 'matched' } : match)),
     );
-    setCelebratedMatchId(matchId);
 
     if (firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
@@ -815,45 +865,10 @@ export function GigProvider({ children }: PropsWithChildren) {
       return false;
     }
 
-    const match = matches.find((item) => item.id === matchId);
-    const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
-    const locationMessageContent = task ? buildTaskLocationMessage(task) : null;
-    const hasLocationMessage = locationMessageContent
-      ? messages.some(
-          (message) =>
-            message.match_id === matchId &&
-            message.sender_id === task?.poster_id &&
-            message.content === locationMessageContent,
-        )
-      : false;
-    const locationMessage: Message | null =
-      task && locationMessageContent && !hasLocationMessage
-        ? {
-            id: createUuid(),
-            match_id: matchId,
-            sender_id: task.poster_id,
-            content: locationMessageContent,
-            created_at: new Date().toISOString(),
-          }
-        : null;
-
     syncProfile({ ...profile, credits: profile.credits - CHAT_UNLOCK_COST_BSTS });
     setMatches((current) =>
       current.map((matchItem) => (matchItem.id === matchId ? { ...matchItem, is_unlocked: true } : matchItem)),
     );
-
-    if (locationMessage) {
-      setMessages((current) =>
-        current.some(
-          (message) =>
-            message.match_id === locationMessage.match_id &&
-            message.sender_id === locationMessage.sender_id &&
-            message.content === locationMessage.content,
-        )
-          ? current
-          : mergeMessages(current, [locationMessage]),
-      );
-    }
 
     if (firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
@@ -861,10 +876,6 @@ export function GigProvider({ children }: PropsWithChildren) {
         updated_at: new Date().toISOString(),
       });
       await persistProfile({ ...profile, credits: profile.credits - CHAT_UNLOCK_COST_BSTS });
-
-      if (locationMessage) {
-        await setDoc(doc(firebaseDb, 'messages', locationMessage.id), buildMessageRecord(locationMessage, match, task));
-      }
     }
 
     return true;
@@ -943,6 +954,62 @@ export function GigProvider({ children }: PropsWithChildren) {
         );
       }
     }
+  }
+
+  async function rateMatch(matchId: string, value: number) {
+    const match = matches.find((item) => item.id === matchId);
+    const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
+    const rating = normalizeRating(value);
+
+    if (!match || !task || match.status !== 'completed') {
+      return false;
+    }
+
+    const isPoster = task.poster_id === profile.id;
+    const isDoer = match.doer_id === profile.id;
+
+    if (!isPoster && !isDoer) {
+      return false;
+    }
+
+    const ratingField = isPoster ? 'doer_rating_by_poster' : 'poster_rating_by_doer';
+    const targetProfileId = isPoster ? match.doer_id : task.poster_id;
+    const previousRating = match[ratingField];
+
+    setMatches((current) =>
+      current.map((item) => (item.id === matchId ? { ...item, [ratingField]: rating } : item)),
+    );
+    setProfiles((current) =>
+      current.map((item) => (item.id === targetProfileId ? applyReceivedRating(item, rating, previousRating) : item)),
+    );
+    setProfile((current) =>
+      current.id === targetProfileId ? applyReceivedRating(current, rating, previousRating) : current,
+    );
+
+    if (firebaseDb) {
+      await updateDoc(doc(firebaseDb, 'matches', matchId), {
+        [ratingField]: rating,
+        updated_at: new Date().toISOString(),
+      });
+
+      const targetProfile = profiles.find((item) => item.id === targetProfileId);
+
+      if (targetProfile) {
+        const nextProfile = applyReceivedRating(targetProfile, rating, previousRating);
+        const ratingRecord = {
+          rating: nextProfile.rating,
+          rating_count: nextProfile.rating_count,
+          updated_at: new Date().toISOString(),
+        };
+
+        await Promise.allSettled([
+          setDoc(doc(firebaseDb, 'profiles', targetProfileId), ratingRecord, { merge: true }),
+          setDoc(doc(firebaseDb, 'public_profiles', targetProfileId), ratingRecord, { merge: true }),
+        ]);
+      }
+    }
+
+    return true;
   }
 
   async function sendMessage(matchId: string, content: string) {
@@ -1177,6 +1244,27 @@ export function GigProvider({ children }: PropsWithChildren) {
     void persistProfile(nextProfile);
   }
 
+  function rememberSwipedTask(taskId: string) {
+    if (!taskId) {
+      return;
+    }
+
+    setSwipedTaskIds((current) => {
+      if (current.includes(taskId)) {
+        return current;
+      }
+
+      const nextTaskIds = [...current, taskId];
+      void AsyncStorage.setItem(swipeContextStorageKey(profile.id), JSON.stringify(nextTaskIds));
+      return nextTaskIds;
+    });
+  }
+
+  function clearSwipeContext() {
+    setSwipedTaskIds([]);
+    void AsyncStorage.removeItem(swipeContextStorageKey(profile.id));
+  }
+
   function updateLocation(coords: Coordinates) {
     const nextProfile = { ...profile, location: coords };
     syncProfile(nextProfile);
@@ -1219,7 +1307,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     authUserName,
     isDark,
     colorMode,
-    celebratedMatchId,
+    swipedTaskCount: swipedTaskIds.length,
     createTask,
     updateTask,
     submitBid,
@@ -1227,6 +1315,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     likeBack,
     unlockChat,
     completeMatch,
+    rateMatch,
     sendMessage,
     verifySelfie,
     startPhoneOnlyAuth,
@@ -1242,7 +1331,8 @@ export function GigProvider({ children }: PropsWithChildren) {
     updateLocation,
     toggleColorMode,
     logout,
-    clearCelebration: () => setCelebratedMatchId(null),
+    rememberSwipedTask,
+    clearSwipeContext,
   };
 
   return <GigStoreContext.Provider value={value}>{children}</GigStoreContext.Provider>;

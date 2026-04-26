@@ -164,14 +164,14 @@ export function OnboardingScreen() {
     }
   }
 
-  async function handleGoogle() {
+  async function continueWithGoogle() {
     setBusy(true);
 
     try {
       const result = await signInWithGoogle();
 
       if (!result.ok) {
-        Alert.alert('Google sign-in failed', result.message ?? 'Check your Firebase Google provider settings.');
+        Alert.alert('Google connection failed', result.message ?? 'Check your Firebase Google provider settings.');
       }
     } finally {
       setBusy(false);
@@ -283,14 +283,14 @@ export function OnboardingScreen() {
                   <PrimaryButton
                     label="Sign up with Google"
                     icon="logo-google"
-                    onPress={() => void handleGoogle()}
+                    onPress={() => void continueWithGoogle()}
                     disabled={busy}
                   />
                   <PrimaryButton
                     label="Log in with Google"
                     icon="log-in"
                     tone="ghost"
-                    onPress={() => void handleGoogle()}
+                    onPress={() => void continueWithGoogle()}
                     disabled={busy}
                   />
                 </View>
@@ -353,23 +353,33 @@ export function OnboardingScreen() {
               <StepPanel panelClass={panelClass}>
                 <Text className={`mb-5 text-3xl font-black ${titleClass}`}>Name and photo</Text>
                 <View className="mb-5 flex-row items-center gap-4">
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => void pickAvatar()}
-                    className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-orange-400/30 bg-orange-500/15">
-                    {avatarSource ? (
-                      <Image source={avatarSource} style={{ height: 96, width: 96 }} contentFit="cover" />
-                    ) : (
-                      <Ionicons name="camera" size={30} color="#F97316" />
-                    )}
-                  </Pressable>
-                  <PrimaryButton
-                    label={avatarUrl ? 'Change Photo' : 'Add Photo'}
-                    icon="camera"
-                    tone="ghost"
-                    onPress={() => void pickAvatar()}
-                    style={{ flex: 1 }}
-                  />
+                  <View className="relative h-24 w-24">
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => void pickAvatar()}
+                      className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-orange-400/30 bg-orange-500/15">
+                      {avatarSource ? (
+                        <Image source={avatarSource} style={{ height: 96, width: 96 }} contentFit="cover" />
+                      ) : (
+                        <Ionicons name="camera" size={30} color="#F97316" />
+                      )}
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel="Edit profile image"
+                      accessibilityRole="button"
+                      onPress={() => void pickAvatar()}
+                      className="absolute right-0 top-0 h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-violet">
+                      <Ionicons name="create" size={17} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                  <View className="flex-1">
+                    <Text className={`text-lg font-black ${titleClass}`}>
+                      Profile photo
+                    </Text>
+                    <Text className={`mt-1 text-sm leading-5 ${mutedClass}`}>
+                      {avatarUrl ? 'Ready for account creation' : 'Required to continue'}
+                    </Text>
+                  </View>
                 </View>
                 <Field label="Name" labelClass={mutedClass}>
                   <TextInput

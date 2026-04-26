@@ -14,13 +14,20 @@ service cloud.firestore {
       return signedIn() && request.auth.uid in resourceData.participant_ids;
     }
 
+    function trustFieldsOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['rating', 'rating_count', 'vouch_count', 'posted_vouch_count', 'updated_at']);
+    }
+
     match /profiles/{userId} {
-      allow read, create, update, delete: if owns(userId);
+      allow read, create, delete: if owns(userId);
+      allow update: if owns(userId) || (signedIn() && trustFieldsOnly());
     }
 
     match /public_profiles/{userId} {
       allow read: if true;
-      allow create, update, delete: if owns(userId);
+      allow create, delete: if owns(userId);
+      allow update: if owns(userId) || (signedIn() && trustFieldsOnly());
     }
 
     match /tasks/{taskId} {

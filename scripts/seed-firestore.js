@@ -62,7 +62,7 @@ const demoProfiles = [
     data: {
       ...profileDefaults,
       username: 'Aria Stone',
-      avatar_url: 'repo://demo/avatars/aria-stone.png',
+      avatar_url: 'repo://profile/aria-stone.png',
       bio: 'Verified gig starter with same-day event and home tasks.',
       skills: ['Events', 'Hospitality', 'Delivery'],
       interests: ['Events', 'Hospitality', 'Delivery', 'Cleaning', 'Errands'],
@@ -75,6 +75,7 @@ const demoProfiles = [
       vouch_count: 17,
       posted_vouch_count: 29,
       rating: 4.84,
+      rating_count: 46,
     },
   },
   {
@@ -82,7 +83,7 @@ const demoProfiles = [
     data: {
       ...profileDefaults,
       username: 'Milo Reyes',
-      avatar_url: 'repo://demo/avatars/milo-reyes.png',
+      avatar_url: 'repo://profile/milo-reyes.png',
       bio: 'Handyman, installer, and weekend problem solver.',
       skills: ['Handywork', 'Tech Setup', 'Assembly'],
       interests: ['Handywork', 'Tech Setup', 'Assembly', 'Moving', 'Yard Work'],
@@ -96,6 +97,7 @@ const demoProfiles = [
       vouch_count: 41,
       posted_vouch_count: 18,
       rating: 4.96,
+      rating_count: 59,
     },
   },
   {
@@ -103,7 +105,7 @@ const demoProfiles = [
     data: {
       ...profileDefaults,
       username: 'Sage Kim',
-      avatar_url: 'repo://demo/avatars/sage-kim.png',
+      avatar_url: 'repo://profile/sage-kim.png',
       bio: 'Detail-focused cleaner and organizer.',
       skills: ['Cleaning', 'Organizing', 'Errands'],
       interests: ['Cleaning', 'Organizing', 'Errands', 'Pet Care', 'Admin'],
@@ -116,6 +118,7 @@ const demoProfiles = [
       vouch_count: 36,
       posted_vouch_count: 14,
       rating: 4.88,
+      rating_count: 50,
     },
   },
   {
@@ -123,7 +126,7 @@ const demoProfiles = [
     data: {
       ...profileDefaults,
       username: 'Juno Patel',
-      avatar_url: 'repo://demo/avatars/juno-patel.png',
+      avatar_url: 'repo://profile/juno-patel.png',
       bio: 'Reliable mover with a dolly and compact SUV.',
       skills: ['Moving', 'Delivery', 'Assembly'],
       interests: ['Moving', 'Delivery', 'Assembly', 'Events', 'Auto Help'],
@@ -138,6 +141,7 @@ const demoProfiles = [
       vouch_count: 53,
       posted_vouch_count: 9,
       rating: 4.98,
+      rating_count: 62,
     },
   },
 ];
@@ -258,6 +262,7 @@ function publicProfile(profile) {
   delete publicData.accepted_terms_at;
   delete publicData.signup_bonus_awarded;
   delete publicData.credits;
+  delete publicData.location;
   delete publicData.daily_streak;
   delete publicData.weekly_streak;
   delete publicData.monthly_streak;
@@ -274,7 +279,7 @@ function personalizedSeed() {
   const currentProfile = {
     ...profileDefaults,
     username: 'Demo Hustler',
-    avatar_url: 'repo://demo/avatars/demo-hustler.png',
+    avatar_url: 'repo://profile/demo-hustler.png',
     bio: 'Seeded collaborator account for full-flow SideHustle demos.',
     skills: ['Tech Setup', 'Cleaning', 'Organizing', 'Moving', 'Events'],
     interests: ['Tech Setup', 'Cleaning', 'Organizing', 'Moving', 'Events'],
@@ -287,6 +292,7 @@ function personalizedSeed() {
     vouch_count: 24,
     posted_vouch_count: 8,
     rating: 4.92,
+    rating_count: 32,
   };
   const userTaskId = `task-${suffix}-garage`;
   const matchLockedId = `match-${suffix}-locked-chat`;

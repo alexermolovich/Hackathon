@@ -34,10 +34,11 @@ export function skillMatchCount(userSkills: string[], requiredSkills: string[]) 
   return requiredSkills.filter((skill) => normalized.has(skill.toLowerCase())).length;
 }
 
-export function buildDeck(tasks: Task[], user: Profile) {
+export function buildDeck(tasks: Task[], user: Profile, excludedTaskIds: ReadonlySet<string> = new Set()) {
   const interestedCategories = new Set(user.interests.map((category) => category.toLowerCase()));
   const nearby = tasks
     .filter((task) => task.status === 'open')
+    .filter((task) => !excludedTaskIds.has(task.id))
     .filter((task) => task.poster_id !== user.id)
     .filter((task) => milesBetween(user.location, task.location) <= user.search_radius)
     .filter((task) => interestedCategories.size === 0 || interestedCategories.has(task.category.toLowerCase()))

@@ -11,6 +11,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
 import { calculateAge, initials } from '@/lib/gig-utils';
+import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { CURRENCY_NAME } from '@/lib/sidehustle-config';
 
@@ -247,7 +248,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
 
           <View className="flex-row gap-2">
             <TrustPanel icon="medal" label="Hustles Completed" value={profile.vouch_count.toString()} />
-            <TrustPanel icon="star" label="Avg Rating" value={profile.rating.toFixed(2)} />
+            <TrustPanel icon="star" label="Avg Rating" value={formatVisibleRating(profile, 'any')} />
             <TrustPanel icon="briefcase" label="Posted Gigs" value={profile.posted_vouch_count.toString()} />
           </View>
         </View>

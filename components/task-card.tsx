@@ -8,6 +8,7 @@ import { VerifiedBadge } from '@/components/verified-badge';
 import type { Profile, Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
 import { formatDistance } from '@/lib/gig-utils';
+import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 
 type TaskCardProps = {
@@ -98,7 +99,7 @@ export function TaskCard({ task, currentUser, poster, revealPoster = false, onPa
           <View className="mt-1">
             <DetailRow icon="calendar" label="Date wanted" value={task.date_window || 'Flexible'} isDark={isDark} />
             <DetailRow icon="pricetag" label="Category" value={task.category} isDark={isDark} />
-            <DetailRow icon="star" label="Requester rating" value={poster.rating.toFixed(2)} isDark={isDark} />
+            <DetailRow icon="star" label="Requester rating" value={formatVisibleRating(poster, 'poster')} isDark={isDark} />
             <DetailRow icon="time" label="Posted" value={formatPostedAt(task.created_at)} isDark={isDark} />
             {task.required_skills.length > 0 ? (
               <DetailRow icon="construct" label="Helpful skills" value={task.required_skills.join(', ')} isDark={isDark} />

@@ -27,9 +27,10 @@ export type PhoneAuthResult = AuthActionResult & {
 
 const phonePattern = /^\+[1-9]\d{7,14}$/;
 const DEMO_PHONE_CODE = '123456';
+const RECAPTCHA_CONTAINER_PREFIX = '__sidehustle_recaptcha_';
 let pendingDemoPhoneNumber: string | null = null;
 let pendingConfirmationResult: ConfirmationResult | null = null;
-let recaptchaVerifier: RecaptchaVerifier | null = null;
+let recaptchaContainerCount = 0;
 
 export function normalizePhoneNumber(value: string) {
   const trimmed = value.trim();
@@ -62,6 +63,24 @@ function getFirebaseErrorMessage(error: unknown) {
   }
 
   return 'Firebase auth failed.';
+}
+
+function createRecaptchaContainer() {
+  const div = document.createElement('div');
+  div.id = `${RECAPTCHA_CONTAINER_PREFIX}${Date.now()}_${recaptchaContainerCount}`;
+  recaptchaContainerCount += 1;
+  div.setAttribute('aria-hidden', 'true');
+  div.style.position = 'fixed';
+  div.style.left = '0';
+  div.style.top = '0';
+  div.style.width = '1px';
+  div.style.height = '1px';
+  div.style.opacity = '0';
+  div.style.overflow = 'hidden';
+  div.style.pointerEvents = 'none';
+  div.style.zIndex = '-1';
+  document.body.appendChild(div);
+  return div;
 }
 
 export async function signInWithGoogleFirebase(): Promise<GoogleAuthResult> {
@@ -103,28 +122,16 @@ export async function requestFirebasePhoneVerification(
   }
 
   try {
-    if (!recaptchaVerifier) {
-      const containerId = '__recaptcha_container__';
-      if (!document.getElementById(containerId)) {
-        const div = document.createElement('div');
-        div.id = containerId;
-        div.style.position = 'fixed';
-        div.style.top = '0';
-        div.style.left = '0';
-        document.body.appendChild(div);
-      }
-      recaptchaVerifier = new RecaptchaVerifier(auth, containerId, { size: 'invisible' });
-      await recaptchaVerifier.render();
-    }
+    pendingConfirmationResult = null;
+    const recaptchaVerifier = new RecaptchaVerifier(auth, createRecaptchaContainer(), {
+      size: 'invisible',
+    });
 
     pendingConfirmationResult = auth.currentUser
       ? await linkWithPhoneNumber(auth.currentUser, phoneNumber, recaptchaVerifier)
       : await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
     return { ok: true, phone: phoneNumber };
   } catch (error) {
-    // Only clear on failure so the verifier can be recreated on next attempt.
-    recaptchaVerifier?.clear();
-    recaptchaVerifier = null;
     return { ok: false, message: getFirebaseErrorMessage(error) };
   }
 }

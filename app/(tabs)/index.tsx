@@ -10,7 +10,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
 import { CategorySelector } from '@/components/category-selector';
 import { CreditBadge } from '@/components/credit-badge';
-import { MatchRevealCard } from '@/components/match-reveal-card';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
 import { ProfileTrigger } from '@/components/profile-trigger';
@@ -29,16 +28,18 @@ export default function GigDeckScreen() {
     profile,
     submitBid,
     isLiveMode,
-    matches,
-    celebratedMatchId,
-    clearCelebration,
     isDark,
     updateRadius,
     updateInterests,
+    swipedTaskCount,
+    rememberSwipedTask,
+    clearSwipeContext,
   } = useGigStore();
   const swiperRef = useRef<Swiper<Task>>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const [swiperResetKey, setSwiperResetKey] = useState(0);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskIndex, setSelectedTaskIndex] = useState<number | null>(null);
   const [bidNote, setBidNote] = useState(QUICK_BID);
   const [counterBid, setCounterBid] = useState('');
   const [availabilityWindow, setAvailabilityWindow] = useState('');
@@ -47,7 +48,6 @@ export default function GigDeckScreen() {
   const [purchaseOpen, setPurchaseOpen] = useState(false);
 
   const postersById = useMemo(() => new Map(profiles.map((item) => [item.id, item])), [profiles]);
-  const celebratedMatch = matches.find((match) => match.id === celebratedMatchId);
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
@@ -89,9 +89,35 @@ export default function GigDeckScreen() {
 
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSelectedTask(task);
+    setSelectedTaskIndex(cardIndex);
     setBidNote(QUICK_BID);
     setCounterBid(String(task.budget));
     setAvailabilityWindow(task.date_window);
+  }
+
+  function onSwipedLeft(cardIndex: number) {
+    const task = deck[cardIndex];
+
+    if (task) {
+      rememberSwipedTask(task.id);
+    }
+
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }
+
+  function closeBidSheet() {
+    const restoreIndex =
+      selectedTaskIndex !== null && deck[selectedTaskIndex]?.id === selectedTask?.id
+        ? selectedTaskIndex
+        : deck.findIndex((task) => task.id === selectedTask?.id);
+
+    setSelectedTask(null);
+    setSelectedTaskIndex(null);
+
+    if (restoreIndex >= 0) {
+      setActiveCardIndex(restoreIndex);
+      setSwiperResetKey((current) => current + 1);
+    }
   }
 
   async function submitCounterBid() {
@@ -112,6 +138,7 @@ export default function GigDeckScreen() {
       availabilityWindow,
     });
     setSelectedTask(null);
+    setSelectedTaskIndex(null);
     Alert.alert('Bid sent', 'If the gig starter picks you, it will appear in Hustles.');
   }
 
@@ -119,6 +146,7 @@ export default function GigDeckScreen() {
     useCallback(() => {
       return () => {
         setSelectedTask(null);
+        setSelectedTaskIndex(null);
         setProfileOpen(false);
         setSettingsOpen(false);
         setPurchaseOpen(false);
@@ -157,7 +185,7 @@ export default function GigDeckScreen() {
         <View className="flex-1 px-4 pb-4">
           {hasVisibleCard ? (
             <Swiper
-              key={deckSignature}
+              key={`${deckSignature}:${swiperResetKey}`}
               ref={swiperRef}
               cards={deck}
               renderCard={(task?: Task) => {
@@ -169,7 +197,7 @@ export default function GigDeckScreen() {
 
                 return <TaskCard task={task} currentUser={profile} poster={poster} onPass={handlePass} onBid={handleBid} />;
               }}
-              onSwipedLeft={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              onSwipedLeft={onSwipedLeft}
               onSwipedRight={onSwipedRight}
               onSwiped={(cardIndex) => setActiveCardIndex(cardIndex + 1)}
               cardIndex={activeCardIndex}
@@ -211,7 +239,7 @@ export default function GigDeckScreen() {
         </View>
       </View>
 
-      <Modal transparent animationType="fade" visible={Boolean(selectedTask)} onRequestClose={() => setSelectedTask(null)}>
+      <Modal transparent animationType="fade" visible={Boolean(selectedTask)} onRequestClose={closeBidSheet}>
         <View className="flex-1 justify-end bg-black/75">
           <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View className={`rounded-t-[34px] border p-6 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
@@ -256,7 +284,7 @@ export default function GigDeckScreen() {
               textAlignVertical="top"
             />
             <View className="flex-row gap-3">
-              <PrimaryButton label="Cancel" tone="ghost" icon="close" onPress={() => setSelectedTask(null)} style={{ flex: 1 }} />
+              <PrimaryButton label="Cancel" tone="ghost" icon="close" onPress={closeBidSheet} style={{ flex: 1 }} />
               <PrimaryButton
                 label="Send Bid"
                 icon="send"
@@ -287,6 +315,25 @@ export default function GigDeckScreen() {
               </View>
               <View className={`mb-5 rounded-[28px] border p-5 ${panelClass}`}>
                 <RadiusSlider value={profile.search_radius} onChange={updateRadius} />
+                <View className={`mt-5 flex-row items-center justify-between rounded-[22px] px-4 py-3 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+                  <View className="min-w-0 flex-1 pr-3">
+                    <Text className={`text-sm font-black ${titleClass}`}>Swipe context</Text>
+                    <Text className={`text-xs font-semibold ${mutedClass}`} numberOfLines={1}>
+                      {swipedTaskCount} passed gig{swipedTaskCount === 1 ? '' : 's'} hidden
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityLabel="Clear passed gig context"
+                    accessibilityRole="button"
+                    disabled={swipedTaskCount === 0}
+                    onPress={clearSwipeContext}
+                    className={`min-h-10 flex-row items-center justify-center gap-2 rounded-full px-4 ${
+                      swipedTaskCount === 0 ? 'bg-zinc-500/20' : 'bg-violet'
+                    }`}>
+                    <Ionicons name="refresh" size={16} color="#FFFFFF" />
+                    <Text className="text-sm font-black text-white">Clear</Text>
+                  </Pressable>
+                </View>
               </View>
               <View className={`mb-5 rounded-[28px] border p-5 ${panelClass}`}>
                 <Text className={`mb-3 text-xl font-black ${titleClass}`}>Categories</Text>
@@ -306,7 +353,6 @@ export default function GigDeckScreen() {
       </Modal>
 
       <BstPurchaseSheet visible={purchaseOpen} onClose={() => setPurchaseOpen(false)} />
-      {celebratedMatch && <MatchRevealCard match={celebratedMatch} onDismiss={clearCelebration} />}
     </SafeAreaView>
   );
 }

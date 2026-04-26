@@ -29,6 +29,7 @@ export type Profile = {
   vouch_count: number;
   posted_vouch_count: number;
   rating: number;
+  rating_count: number;
 };
 
 export type TaskStatus = 'open' | 'archived';
@@ -63,6 +64,8 @@ export type GigMatch = {
   availability_window: string;
   is_unlocked: boolean;
   status: MatchStatus;
+  doer_rating_by_poster: number | null;
+  poster_rating_by_doer: number | null;
   created_at: string;
 };
 

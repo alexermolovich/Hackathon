@@ -9,6 +9,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
 import { formatDistance } from '@/lib/gig-utils';
+import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 
 export default function GigDetailScreen() {
@@ -108,7 +109,7 @@ export default function GigDetailScreen() {
           </View>
 
           <View className="flex-row gap-3">
-            <Metric icon="star" label="Rating" value={poster.rating.toFixed(2)} />
+            <Metric icon="star" label="Rating" value={formatVisibleRating(poster, 'poster')} />
             <Metric icon="medal" label="Hustles Completed" value={poster.vouch_count.toString()} />
           </View>
         </View>

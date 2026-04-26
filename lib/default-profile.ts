@@ -27,4 +27,5 @@ export const defaultProfile: Profile = {
   vouch_count: 0,
   posted_vouch_count: 0,
   rating: 5,
+  rating_count: 0,
 };

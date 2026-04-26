@@ -3,16 +3,16 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
 import { CreditBadge } from '@/components/credit-badge';
-import { MatchRevealCard } from '@/components/match-reveal-card';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
 import { ProfileTrigger } from '@/components/profile-trigger';
+import { StarRating } from '@/components/star-rating';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
@@ -26,8 +26,7 @@ export default function MatchesScreen() {
     matches,
     unlockChat,
     completeMatch,
-    celebratedMatchId,
-    clearCelebration,
+    rateMatch,
     isDark,
   } = useGigStore();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -37,7 +36,6 @@ export default function MatchesScreen() {
   const pendingBids = matches.filter((match) => match.doer_id === profile.id && match.status === 'pending');
   const completed = matches.filter((match) => match.doer_id === profile.id && match.status === 'completed');
 
-  const celebratedMatch = matches.find((match) => match.id === celebratedMatchId);
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
 
@@ -46,6 +44,14 @@ export default function MatchesScreen() {
 
     if (!ok) {
       setPurchaseOpen(true);
+    }
+  }
+
+  async function handleRate(matchId: string, rating: number) {
+    const ok = await rateMatch(matchId, rating);
+
+    if (!ok) {
+      Alert.alert('Rating not saved', 'Only completed hustles can be rated.');
     }
   }
 
@@ -89,15 +95,7 @@ export default function MatchesScreen() {
           <EmptyState copy="Completed gigs become Hustles Completed on your profile." />
         ) : (
           completed.map((match) => (
-            <Link key={match.id} href={gigHref(match.task.id)} asChild>
-              <Pressable accessibilityRole="button" className="mb-3 flex-row items-center gap-3 rounded-[26px] border border-emerald-400/20 bg-emerald-500/10 p-4">
-                <Ionicons name="checkmark-circle" size={24} color="#34D399" />
-                <View className="flex-1">
-                  <Text className={`font-black ${titleClass}`}>{match.task.title}</Text>
-                  <Text className={`text-sm ${isDark ? 'text-emerald-100' : 'text-emerald-700'}`}>Hustle completed</Text>
-                </View>
-              </Pressable>
-            </Link>
+            <CompletedHustleCard key={match.id} match={match} onRate={(rating) => void handleRate(match.id, rating)} />
           ))
         )}
       </ScrollView>
@@ -115,7 +113,6 @@ export default function MatchesScreen() {
         reason={`Unlocking a hustle costs ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME}.`}
         onClose={() => setPurchaseOpen(false)}
       />
-      {celebratedMatch && <MatchRevealCard match={celebratedMatch} onDismiss={clearCelebration} />}
     </SafeAreaView>
   );
 }
@@ -196,6 +193,43 @@ function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onU
           onPress={onUnlock}
         />
       )}
+    </View>
+  );
+}
+
+function CompletedHustleCard({ match, onRate }: { match: EnrichedMatch; onRate: (rating: number) => void }) {
+  const { isDark } = useGigStore();
+  const titleClass = isDark ? 'text-white' : 'text-zinc-950';
+  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+  const reveal = match.is_unlocked;
+
+  return (
+    <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-emerald-400/20 bg-emerald-500/10' : 'border-emerald-200 bg-emerald-50'}`}>
+      <View className="mb-4 flex-row items-center gap-3">
+        {reveal ? <Avatar profile={match.poster} size={54} /> : <HiddenAvatar poster={match.poster} />}
+        <View className="flex-1">
+          <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>
+            {match.task.title}
+          </Text>
+          <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>
+            {reveal ? `Completed for ${match.poster.username}` : 'Hustle completed'}
+          </Text>
+        </View>
+        <Ionicons name="checkmark-circle" size={24} color="#34D399" />
+      </View>
+
+      <StarRating
+        label={match.poster_rating_by_doer ? `You rated the gig starter ${match.poster_rating_by_doer}/5` : 'Rate gig starter'}
+        value={match.poster_rating_by_doer}
+        onRate={onRate}
+      />
+
+      <Link href={gigHref(match.task.id)} asChild>
+        <Pressable accessibilityRole="button" className={`mt-3 min-h-12 flex-row items-center justify-center gap-2 rounded-3xl border px-5 ${isDark ? 'border-white/10 bg-white/10' : 'border-emerald-200 bg-white'}`}>
+          <Ionicons name="briefcase" size={18} color={isDark ? '#FFFFFF' : '#065F46'} />
+          <Text className={`text-sm font-bold ${isDark ? 'text-white' : 'text-emerald-900'}`}>Open Gig</Text>
+        </Pressable>
+      </Link>
     </View>
   );
 }
