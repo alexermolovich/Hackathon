@@ -25,4 +25,8 @@ export const defaultProfile: Profile = {
   posted_vouch_count: 0,
   rating: 5,
   rating_count: 0,
+  ai_match_profile: null,
+  ai_match_profile_signature: null,
+  ai_match_profile_location: null,
+  ai_match_profile_updated_at: null,
 };

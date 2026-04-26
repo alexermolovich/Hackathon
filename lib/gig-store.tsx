@@ -1,12 +1,13 @@
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import type { PropsWithChildren } from 'react';
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   increment,
@@ -30,8 +31,17 @@ import {
   requestFirebasePhoneVerification,
   signInWithGoogleFirebase,
 } from './auth-utils';
-import type { Coordinates, EnrichedMatch, GigMatch, Message, Profile, Task } from './gig-types';
-import { buildDeck, createUuid, enrichMatches } from './gig-utils';
+import type { AiTaskMatchProfile, AiUserMatchProfile, Coordinates, EnrichedMatch, GigMatch, Message, Profile, Task } from './gig-types';
+import {
+  buildTaskAiMatchProfile,
+  buildUserAiMatchProfile,
+  createProfileAiProfileSignature,
+  createTaskAiProfileSignature,
+  getTaskSafety,
+  rankDeckTasks,
+  shouldRefreshProfileAiProfile,
+} from './ai-matching';
+import { createUuid, enrichMatches, milesBetween } from './gig-utils';
 import { isTransientImageRef, toPublicAvatarRef, toShareableImageRefs } from './repo-images';
 
 type CreateTaskInput = {
@@ -90,6 +100,10 @@ type StoreActionResult = {
   message?: string;
 };
 
+type TaskSaveResult = StoreActionResult & {
+  reason?: 'insufficient_credits' | 'unsafe_content';
+};
+
 type PhoneActionResult = StoreActionResult & {
   phone?: string;
 };
@@ -109,8 +123,9 @@ type GigStoreValue = {
   isDark: boolean;
   colorMode: 'light' | 'dark';
   swipedTaskCount: number;
-  createTask: (input: CreateTaskInput) => Promise<boolean>;
-  updateTask: (taskId: string, input: UpdateTaskInput) => Promise<boolean>;
+  createTask: (input: CreateTaskInput) => Promise<TaskSaveResult>;
+  updateTask: (taskId: string, input: UpdateTaskInput) => Promise<TaskSaveResult>;
+  deleteTask: (taskId: string) => Promise<StoreActionResult>;
   submitBid: (task: Task, input: BidInput) => Promise<GigMatch>;
   submitMatchedBid: (task: Task, input: BidInput) => Promise<GigMatch>;
   likeBack: (matchId: string) => Promise<void>;
@@ -143,6 +158,7 @@ type GigStoreValue = {
 const GigStoreContext = createContext<GigStoreValue | null>(null);
 const TASK_LOCATION_MESSAGE_PREFIX = 'Gig location:';
 const SWIPE_CONTEXT_STORAGE_PREFIX = 'sidehustle:swipe-context:';
+const PROFILE_AI_REFRESH_DEBOUNCE_MS = 1400;
 
 function swipeContextStorageKey(profileId: string) {
   return `${SWIPE_CONTEXT_STORAGE_PREFIX}${profileId}`;
@@ -226,6 +242,50 @@ function getCoordinates(value: unknown, fallback: Coordinates): Coordinates {
   return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : fallback;
 }
 
+function getOptionalCoordinates(value: unknown): Coordinates | null {
+  const rowLocation = value as Record<string, unknown> | undefined;
+  const latitude = getNumber(rowLocation?.latitude, Number.NaN);
+  const longitude = getNumber(rowLocation?.longitude, Number.NaN);
+
+  return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
+}
+
+function getTaskAiMatchProfile(value: unknown): AiTaskMatchProfile | null {
+  const row = value as Partial<AiTaskMatchProfile> | undefined;
+
+  if (!row || typeof row !== 'object' || !row.summary) {
+    return null;
+  }
+
+  return {
+    source: row.source === 'ai' ? 'ai' : 'local',
+    summary: getString(row.summary),
+    concepts: getStringArray(row.concepts),
+    semantic_categories: getStringArray(row.semantic_categories),
+    safety: {
+      status: row.safety?.status === 'blocked' || row.safety?.status === 'review' ? row.safety.status : 'safe',
+      reasons: getStringArray(row.safety?.reasons),
+    },
+    generated_at: getString(row.generated_at) || new Date().toISOString(),
+  };
+}
+
+function getUserAiMatchProfile(value: unknown): AiUserMatchProfile | null {
+  const row = value as Partial<AiUserMatchProfile> | undefined;
+
+  if (!row || typeof row !== 'object' || !row.summary) {
+    return null;
+  }
+
+  return {
+    source: row.source === 'ai' ? 'ai' : 'local',
+    summary: getString(row.summary),
+    concepts: getStringArray(row.concepts),
+    preferred_categories: getStringArray(row.preferred_categories),
+    generated_at: getString(row.generated_at) || new Date().toISOString(),
+  };
+}
+
 function buildProfileFromRow(id: string, row?: Record<string, unknown> | null, current = defaultProfile): Profile {
   const rowLocation = row?.location as Record<string, unknown> | undefined;
 
@@ -260,6 +320,10 @@ function buildProfileFromRow(id: string, row?: Record<string, unknown> | null, c
     posted_vouch_count: getNumber(row?.posted_vouch_count, current.posted_vouch_count),
     rating: getNumber(row?.rating, current.rating),
     rating_count: getNumber(row?.rating_count, current.rating_count),
+    ai_match_profile: getUserAiMatchProfile(row?.ai_match_profile) ?? current.ai_match_profile,
+    ai_match_profile_signature: getString(row?.ai_match_profile_signature) || current.ai_match_profile_signature,
+    ai_match_profile_location: getOptionalCoordinates(row?.ai_match_profile_location) ?? current.ai_match_profile_location,
+    ai_match_profile_updated_at: getString(row?.ai_match_profile_updated_at) || current.ai_match_profile_updated_at,
   };
 }
 
@@ -315,6 +379,10 @@ function buildPrivateProfileRecord(profile: Profile) {
     posted_vouch_count: profile.posted_vouch_count,
     rating: profile.rating,
     rating_count: profile.rating_count,
+    ai_match_profile: profile.ai_match_profile,
+    ai_match_profile_signature: profile.ai_match_profile_signature,
+    ai_match_profile_location: profile.ai_match_profile_location,
+    ai_match_profile_updated_at: profile.ai_match_profile_updated_at,
     updated_at: new Date().toISOString(),
   };
 }
@@ -336,6 +404,10 @@ function buildPublicProfileRecord(profile: Profile) {
     posted_vouch_count: profile.posted_vouch_count,
     rating: profile.rating,
     rating_count: profile.rating_count,
+    ai_match_profile: profile.ai_match_profile,
+    ai_match_profile_signature: profile.ai_match_profile_signature,
+    ai_match_profile_location: null,
+    ai_match_profile_updated_at: profile.ai_match_profile_updated_at,
     updated_at: new Date().toISOString(),
   };
 }
@@ -376,6 +448,20 @@ export function GigProvider({ children }: PropsWithChildren) {
   const [authUserEmail, setAuthUserEmail] = useState<string | null>(null);
   const [authUserName, setAuthUserName] = useState<string | null>(null);
   const isDark = colorMode === 'dark';
+  const profileRef = useRef(profile);
+  const profileAiRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profileAiRefreshRunIdRef = useRef(0);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  useEffect(
+    () => () => {
+      clearProfileAiRefreshTimeout();
+    },
+    [],
+  );
 
   const syncProfile = useCallback(
     (nextProfile: Profile) => {
@@ -451,22 +537,19 @@ export function GigProvider({ children }: PropsWithChildren) {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
       };
+      const currentProfile = profileRef.current;
+      const nextProfile = { ...currentProfile, location: coords };
 
-      setProfile((current) => ({ ...current, location: coords }));
-      setProfiles((current) =>
-        current.map((item) => (item.id === profile.id ? { ...item, location: coords } : item)),
-      );
+      syncProfile(nextProfile);
 
-      if (firebaseDb && profile.google_authenticated) {
-        await setDoc(doc(firebaseDb, 'profiles', profile.id), { location: coords }, { merge: true });
-        if (profile.is_onboarded) {
-          await setDoc(doc(firebaseDb, 'public_profiles', profile.id), { location: null }, { merge: true });
-        }
+      if (firebaseDb && currentProfile.google_authenticated) {
+        await persistProfile(nextProfile);
+        scheduleProfileAiRefresh(600);
       }
     } catch {
       // Rapid City defaults keep distance filters usable if location is unavailable.
     }
-  }, [profile.google_authenticated, profile.id, profile.is_onboarded]);
+  }, [persistProfile, syncProfile]);
 
   const mergeMatches = useCallback((existing: GigMatch[], incoming: GigMatch[]) => {
     const byId = new Map(existing.map((match) => [match.id, match]));
@@ -510,6 +593,9 @@ export function GigProvider({ children }: PropsWithChildren) {
         date_window: getString(row.date_window),
         status: row.status === 'archived' ? 'archived' : 'open',
         created_at: toIsoString(row.created_at),
+        ai_match_profile: getTaskAiMatchProfile(row.ai_match_profile),
+        ai_match_profile_signature: getString(row.ai_match_profile_signature) || null,
+        ai_match_profile_updated_at: getString(row.ai_match_profile_updated_at) || null,
       };
     },
     [profile.location.latitude, profile.location.longitude],
@@ -691,16 +777,121 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     return ids;
   }, [matches, profile.id, swipedTaskIds]);
-  const deck = useMemo(() => buildDeck(tasks, profile, excludedDeckTaskIds), [excludedDeckTaskIds, profile, tasks]);
+  const deck = useMemo(
+    () => rankDeckTasks(tasks, profile, excludedDeckTaskIds, matches, profiles),
+    [excludedDeckTaskIds, matches, profile, profiles, tasks],
+  );
   const enrichedMatches = useMemo(() => enrichMatches(matches, tasks, profiles), [matches, profiles, tasks]);
   const isAccountReady = useMemo(() => isProfileAppReady(profile), [profile]);
 
-  async function createTask(input: CreateTaskInput) {
-    if (input.boost_cost_bsts > profile.credits) {
-      return false;
+  async function withTaskAiProfile(task: Task, existingTask?: Task): Promise<Task> {
+    const signature = createTaskAiProfileSignature(task);
+
+    if (
+      existingTask?.ai_match_profile &&
+      existingTask.ai_match_profile_signature === signature &&
+      existingTask.ai_match_profile_updated_at
+    ) {
+      return {
+        ...task,
+        ai_match_profile: existingTask.ai_match_profile,
+        ai_match_profile_signature: existingTask.ai_match_profile_signature,
+        ai_match_profile_updated_at: existingTask.ai_match_profile_updated_at,
+      };
     }
 
-    const task: Task = {
+    const aiMatchProfile = await buildTaskAiMatchProfile(task);
+
+    return {
+      ...task,
+      ai_match_profile: aiMatchProfile,
+      ai_match_profile_signature: signature,
+      ai_match_profile_updated_at: aiMatchProfile.generated_at,
+    };
+  }
+
+  async function withProfileAiProfile(nextProfile: Profile, previousProfile = profile): Promise<Profile> {
+    if (!shouldRefreshProfileAiProfile(previousProfile, nextProfile)) {
+      return nextProfile;
+    }
+
+    const aiMatchProfile = await buildUserAiMatchProfile(nextProfile);
+
+    return {
+      ...nextProfile,
+      ai_match_profile: aiMatchProfile,
+      ai_match_profile_signature: createProfileAiProfileSignature(nextProfile),
+      ai_match_profile_location: nextProfile.location,
+      ai_match_profile_updated_at: aiMatchProfile.generated_at,
+    };
+  }
+
+  function clearProfileAiRefreshTimeout() {
+    if (profileAiRefreshTimeoutRef.current) {
+      clearTimeout(profileAiRefreshTimeoutRef.current);
+      profileAiRefreshTimeoutRef.current = null;
+    }
+  }
+
+  function scheduleProfileAiRefresh(delayMs = PROFILE_AI_REFRESH_DEBOUNCE_MS) {
+    clearProfileAiRefreshTimeout();
+    const runId = profileAiRefreshRunIdRef.current + 1;
+    profileAiRefreshRunIdRef.current = runId;
+
+    profileAiRefreshTimeoutRef.current = setTimeout(() => {
+      profileAiRefreshTimeoutRef.current = null;
+      const profileAtStart = profileRef.current;
+      const expectedSignature = createProfileAiProfileSignature(profileAtStart);
+
+      void withProfileAiProfile(profileAtStart, profileAtStart).then((profileWithAi) => {
+        if (profileAiRefreshRunIdRef.current !== runId) {
+          return;
+        }
+
+        const currentProfile = profileRef.current;
+
+        if (createProfileAiProfileSignature(currentProfile) !== expectedSignature) {
+          return;
+        }
+
+        const nextProfile = {
+          ...currentProfile,
+          ai_match_profile: profileWithAi.ai_match_profile,
+          ai_match_profile_signature: profileWithAi.ai_match_profile_signature,
+          ai_match_profile_location: profileWithAi.ai_match_profile_location,
+          ai_match_profile_updated_at: profileWithAi.ai_match_profile_updated_at,
+        };
+
+        syncProfile(nextProfile);
+        void persistProfile(nextProfile);
+      });
+    }, delayMs);
+  }
+
+  function blockedTaskResult(task: Task): TaskSaveResult | null {
+    const safety = getTaskSafety(task);
+
+    if (safety.status !== 'blocked') {
+      return null;
+    }
+
+    return {
+      ok: false,
+      reason: 'unsafe_content',
+      message: 'Profanity, NSFW, adult-service, illegal, or unsafe gigs cannot be posted on SideHustle. Edit the gig details before posting.',
+    };
+  }
+
+  async function createTask(input: CreateTaskInput): Promise<TaskSaveResult> {
+    if (input.boost_cost_bsts > profile.credits) {
+      return {
+        ok: false,
+        reason: 'insufficient_credits',
+        message: `You don't have enough BSTs for this boost.`,
+      } satisfies TaskSaveResult;
+    }
+
+    const task = await withTaskAiProfile({
       id: createUuid(),
       poster_id: profile.id,
       title: input.title,
@@ -717,7 +908,15 @@ export function GigProvider({ children }: PropsWithChildren) {
       date_window: input.date_window,
       status: 'open',
       created_at: new Date().toISOString(),
-    };
+      ai_match_profile: null,
+      ai_match_profile_signature: null,
+      ai_match_profile_updated_at: null,
+    });
+    const blockedResult = blockedTaskResult(task);
+
+    if (blockedResult) {
+      return blockedResult;
+    }
 
     setTasks((current) => [task, ...current]);
 
@@ -738,23 +937,27 @@ export function GigProvider({ children }: PropsWithChildren) {
       }
     }
 
-    return true;
+    return { ok: true };
   }
 
-  async function updateTask(taskId: string, input: UpdateTaskInput) {
+  async function updateTask(taskId: string, input: UpdateTaskInput): Promise<TaskSaveResult> {
     const existingTask = tasks.find((item) => item.id === taskId);
 
     if (!existingTask || existingTask.poster_id !== profile.id) {
-      return false;
+      return { ok: false, message: 'Only the gig creator can update this gig.' };
     }
 
     const boostDelta = Math.max(0, input.boost_cost_bsts - existingTask.boost_cost_bsts);
 
     if (boostDelta > profile.credits) {
-      return false;
+      return {
+        ok: false,
+        reason: 'insufficient_credits',
+        message: `You don't have enough BSTs for this boost.`,
+      };
     }
 
-    const nextTask: Task = {
+    const nextTask = await withTaskAiProfile({
       ...existingTask,
       title: input.title,
       description: input.description,
@@ -768,7 +971,12 @@ export function GigProvider({ children }: PropsWithChildren) {
       boost_cost_bsts: input.is_boosted ? input.boost_cost_bsts : 0,
       date_window: input.date_window,
       status: input.status,
-    };
+    }, existingTask);
+    const blockedResult = blockedTaskResult(nextTask);
+
+    if (blockedResult) {
+      return blockedResult;
+    }
 
     setTasks((current) => current.map((item) => (item.id === taskId ? nextTask : item)));
 
@@ -792,7 +1000,37 @@ export function GigProvider({ children }: PropsWithChildren) {
       }
     }
 
-    return true;
+    return { ok: true };
+  }
+
+  async function deleteTask(taskId: string): Promise<StoreActionResult> {
+    const existingTask = tasks.find((item) => item.id === taskId);
+
+    if (!existingTask || existingTask.poster_id !== profile.id) {
+      return { ok: false, message: 'Only the gig creator can delete this gig.' };
+    }
+
+    const taskMatches = matches.filter((match) => match.task_id === taskId);
+
+    if (taskMatches.some((match) => match.status === 'completed')) {
+      return { ok: false, message: 'Completed gigs stay in Archived and cannot be deleted.' };
+    }
+
+    if (firebaseDb) {
+      try {
+        await deleteDoc(doc(firebaseDb, 'tasks', taskId));
+      } catch {
+        return { ok: false, message: 'Could not delete this gig. Please try again.' };
+      }
+    }
+
+    const taskMatchIds = new Set(taskMatches.map((match) => match.id));
+
+    setTasks((current) => current.filter((item) => item.id !== taskId));
+    setMatches((current) => current.filter((match) => match.task_id !== taskId));
+    setMessages((current) => current.filter((message) => !taskMatchIds.has(message.match_id)));
+
+    return { ok: true };
   }
 
   async function submitBid(task: Task, input: BidInput) {
@@ -1311,7 +1549,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     const shouldAwardSignup = !profile.signup_bonus_awarded;
     const now = new Date().toISOString();
-    const nextProfile: Profile = {
+    const nextProfile: Profile = await withProfileAiProfile({
       ...profile,
       username: input.username.trim(),
       phone_number: input.phoneNumber.trim(),
@@ -1328,7 +1566,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       accepted_terms_at: now,
       signup_bonus_awarded: true,
       credits: profile.credits + (shouldAwardSignup ? SIGNUP_BONUS_BSTS : 0),
-    };
+    });
 
     syncProfile(nextProfile);
 
@@ -1338,12 +1576,13 @@ export function GigProvider({ children }: PropsWithChildren) {
   }
 
   async function updateProfileDetails(input: ProfileUpdateInput) {
-    const nextProfile = {
+    const baseProfile = {
       ...profile,
       ...input,
       avatar_url: input.avatar_url ?? profile.avatar_url,
       skills: input.skills ?? input.interests ?? profile.skills,
     };
+    const nextProfile = await withProfileAiProfile(baseProfile);
 
     syncProfile(nextProfile);
 
@@ -1369,6 +1608,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     const nextProfile = { ...profile, interests, skills: interests };
     syncProfile(nextProfile);
     void persistProfile(nextProfile);
+    scheduleProfileAiRefresh();
   }
 
   function rememberSwipedTask(taskId: string) {
@@ -1396,6 +1636,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     const nextProfile = { ...profile, location: coords };
     syncProfile(nextProfile);
     void persistProfile(nextProfile);
+    scheduleProfileAiRefresh();
   }
 
   function toggleColorMode() {
@@ -1403,6 +1644,9 @@ export function GigProvider({ children }: PropsWithChildren) {
   }
 
   function logout() {
+    clearProfileAiRefreshTimeout();
+    profileAiRefreshRunIdRef.current += 1;
+
     if (firebaseAuth) {
       void firebaseAuth.signOut();
     }
@@ -1437,6 +1681,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     swipedTaskCount: swipedTaskIds.length,
     createTask,
     updateTask,
+    deleteTask,
     submitBid,
     submitMatchedBid,
     likeBack,

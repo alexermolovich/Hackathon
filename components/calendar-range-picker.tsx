@@ -5,6 +5,7 @@ const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 const weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 type CalendarRangePickerProps = {
+  disabled?: boolean;
   isDark: boolean;
   onChangeMonth: (offset: number) => void;
   onDone: () => void;
@@ -15,6 +16,7 @@ type CalendarRangePickerProps = {
 };
 
 export function CalendarRangePicker({
+  disabled = false,
   isDark,
   onChangeMonth,
   onDone,
@@ -27,12 +29,12 @@ export function CalendarRangePicker({
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const minSelectableDate = startOfDay(new Date());
   const maxSelectableDate = addMonths(minSelectableDate, 6);
-  const canGoPrevious = addMonths(visibleMonth, -1).getTime() >= startOfMonth(minSelectableDate).getTime();
-  const canGoNext = addMonths(visibleMonth, 1).getTime() <= startOfMonth(maxSelectableDate).getTime();
+  const canGoPrevious = !disabled && addMonths(visibleMonth, -1).getTime() >= startOfMonth(minSelectableDate).getTime();
+  const canGoNext = !disabled && addMonths(visibleMonth, 1).getTime() <= startOfMonth(maxSelectableDate).getTime();
   const cells = buildCalendarCells(visibleMonth);
 
   return (
-    <View className={`mt-3 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+    <View className={`mt-3 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'} ${disabled ? 'opacity-70' : ''}`}>
       <View className="mb-4 flex-row items-center justify-between">
         <Pressable
           accessibilityRole="button"
@@ -75,17 +77,17 @@ export function CalendarRangePicker({
 
           const selected = sameDay(day, rangeStart) || sameDay(day, rangeEnd);
           const inRange = isInRange(day, rangeStart, rangeEnd);
-          const disabled = day.getTime() < minSelectableDate.getTime() || day.getTime() > maxSelectableDate.getTime();
+          const dayDisabled = disabled || day.getTime() < minSelectableDate.getTime() || day.getTime() > maxSelectableDate.getTime();
 
           return (
             <View key={day.toISOString()} className="p-0.5" style={{ width: `${100 / 7}%`, aspectRatio: 1 }}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled }}
-                disabled={disabled}
+                accessibilityState={{ disabled: dayDisabled }}
+                disabled={dayDisabled}
                 onPress={() => onSelect(day)}
                 className={`h-full items-center justify-center rounded-2xl ${
-                  disabled
+                  dayDisabled
                     ? isDark
                       ? 'bg-white/[0.03]'
                       : 'bg-zinc-50'
@@ -97,7 +99,7 @@ export function CalendarRangePicker({
                           ? 'bg-white/5'
                           : 'bg-zinc-100'
                 }`}>
-                <Text className={`font-black ${disabled ? 'text-zinc-500/50' : selected ? 'text-white' : titleClass}`}>
+                <Text className={`font-black ${dayDisabled ? 'text-zinc-500/50' : selected ? 'text-white' : titleClass}`}>
                   {day.getDate()}
                 </Text>
               </Pressable>
@@ -119,8 +121,10 @@ export function CalendarRangePicker({
       {rangeStart && rangeEnd ? (
         <Pressable
           accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          disabled={disabled}
           onPress={onDone}
-          className="mt-3 min-h-11 items-center justify-center rounded-full bg-violet px-5">
+          className={`mt-3 min-h-11 items-center justify-center rounded-full bg-violet px-5 ${disabled ? 'opacity-60' : ''}`}>
           <Text className="text-sm font-black text-white">Done</Text>
         </Pressable>
       ) : null}

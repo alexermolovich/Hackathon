@@ -7,8 +7,10 @@
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web",
+    "web": "node ./scripts/dev-web.js",
+    "web:expo": "expo start --web",
     "lint": "expo lint",
+    "ai-match:endpoint": "node ./scripts/ai-match-endpoint.js",
     "seed:firestore": "node ./scripts/seed-firestore.js",
     "typecheck": "tsc --noEmit"
   },

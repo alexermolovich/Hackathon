@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Alert, Modal, Pressable, Text, View } from 'react-native';
+import { Modal, Pressable, Text, View } from 'react-native';
 import { useState } from 'react';
 
 import { useGigStore } from '@/lib/gig-store';
@@ -25,11 +25,7 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
 
   function handleBuy(pack: (typeof BST_PACKAGES)[number]) {
     buyBsts(pack.amount);
-    setStatusCopy(`Mock purchase complete: ${pack.label} added ${pack.amount.toLocaleString()} ${CURRENCY_NAME}.`);
-    Alert.alert(
-      'Mock purchase',
-      `Checkout is not connected yet. ${pack.label} (${pack.price}) was added for the demo.`,
-    );
+    setStatusCopy(`Mock checkout: ${pack.label} (${pack.price}) added ${pack.amount.toLocaleString()} ${CURRENCY_NAME}.`);
   }
 
   return (

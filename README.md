@@ -7,6 +7,7 @@ Hackathon PoC for a cross-platform Expo app: a swipe-first local gig marketplace
 - Expo Router mobile app with Forge, Swipe, Hustles, Profile, onboarding, and locked Chat flows.
 - BSTs (Blood, Sweat Tokens) for signup rewards, boost payments, purchases, and chat unlocks.
 - Firestore-backed profiles, public profiles, gigs, matches, and messages.
+- Hybrid gig matching with cached AI match profiles and local fallback scoring.
 - Repo-hosted demo image references, so demos do not require Firebase Storage.
 - A Firestore seed script for demo profiles, gigs, and optional current-user hustles.
 - NativeWind/Tailwind styling for the SideHustle dark/light theme.
@@ -39,3 +40,13 @@ Seed full current-user hustles after you know your Firebase Auth UID:
 ```bash
 npm run seed:firestore -- --current-user=<firebase-auth-uid>
 ```
+
+## AI matching endpoint
+
+The Expo app never stores an OpenAI API key. For cached GPT-powered match profiles, run or deploy a server endpoint and point the app at it:
+
+```bash
+npm run ai-match:endpoint
+```
+
+Set `OPENAI_API_KEY` and optionally `OPENAI_MATCH_MODEL` on the server. Set `EXPO_PUBLIC_SIDEHUSTLE_AI_MATCH_ENDPOINT` in the app environment, for example `http://localhost:8787/ai-match` during web testing.

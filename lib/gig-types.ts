@@ -3,6 +3,30 @@ export type Coordinates = {
   longitude: number;
 };
 
+export type AiMatchSafetyStatus = 'safe' | 'review' | 'blocked';
+
+export type AiMatchSafety = {
+  status: AiMatchSafetyStatus;
+  reasons: string[];
+};
+
+export type AiTaskMatchProfile = {
+  source: 'ai' | 'local';
+  summary: string;
+  concepts: string[];
+  semantic_categories: string[];
+  safety: AiMatchSafety;
+  generated_at: string;
+};
+
+export type AiUserMatchProfile = {
+  source: 'ai' | 'local';
+  summary: string;
+  concepts: string[];
+  preferred_categories: string[];
+  generated_at: string;
+};
+
 export type Profile = {
   id: string;
   username: string;
@@ -27,6 +51,10 @@ export type Profile = {
   posted_vouch_count: number;
   rating: number;
   rating_count: number;
+  ai_match_profile: AiUserMatchProfile | null;
+  ai_match_profile_signature: string | null;
+  ai_match_profile_location: Coordinates | null;
+  ai_match_profile_updated_at: string | null;
 };
 
 export type TaskStatus = 'open' | 'archived';
@@ -48,6 +76,9 @@ export type Task = {
   date_window: string;
   status: TaskStatus;
   created_at: string;
+  ai_match_profile: AiTaskMatchProfile | null;
+  ai_match_profile_signature: string | null;
+  ai_match_profile_updated_at: string | null;
 };
 
 export type MatchStatus = 'pending' | 'matched' | 'completed';

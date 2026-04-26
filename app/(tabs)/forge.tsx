@@ -78,6 +78,17 @@ export default function ForgeScreen() {
   const myTasks = tasks.filter((task) => task.poster_id === profile.id);
   const archivedTasks = myTasks.filter((task) => task.status === 'archived');
   const openTasks = myTasks.filter((task) => task.status === 'open');
+  const completedTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+
+    matches.forEach((match) => {
+      if (match.task.poster_id === profile.id && match.status === 'completed') {
+        ids.add(match.task.id);
+      }
+    });
+
+    return ids;
+  }, [matches, profile.id]);
   const taskBidCounts = useMemo(() => {
     const counts = new Map<string, number>();
 
@@ -394,7 +405,22 @@ export default function ForgeScreen() {
             {filteredArchivedTasks.length === 0 ? (
               <EmptyState copy={searchQuery.trim() ? 'No matching archived gigs found.' : 'Finished or archived gigs will appear here.'} />
             ) : (
-              filteredArchivedTasks.map((task) => <PostedGigCard key={task.id} task={task} archived />)
+              filteredArchivedTasks.map((task) => (
+                <PostedGigCard
+                  key={task.id}
+                  task={task}
+                  archived
+                  onPress={
+                    completedTaskIds.has(task.id)
+                      ? undefined
+                      : () => {
+                          if (requireVerified()) {
+                            setEditingTask(task);
+                          }
+                        }
+                  }
+                />
+              ))
             )}
           </View>
         )}
@@ -411,7 +437,12 @@ export default function ForgeScreen() {
       <Modal transparent animationType="slide" visible={Boolean(editingTask)} onRequestClose={() => setEditingTask(null)}>
         <View className="flex-1 justify-end bg-black/60">
           <View className={`max-h-[90%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
-            <TaskComposer onClose={() => setEditingTask(null)} task={editingTask} onSaved={() => setEditingTask(null)} />
+            <TaskComposer
+              onClose={() => setEditingTask(null)}
+              task={editingTask}
+              onDeleted={() => setEditingTask(null)}
+              onSaved={() => setEditingTask(null)}
+            />
           </View>
         </View>
       </Modal>
