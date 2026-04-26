@@ -2,15 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Alert, Modal, Pressable, Text, View } from 'react-native';
 import { useState } from 'react';
 
-import { PrimaryButton } from '@/components/primary-button';
 import { useGigStore } from '@/lib/gig-store';
 import {
   BST_PACKAGES,
   CURRENCY_FULL_NAME,
   CURRENCY_NAME,
-  DAILY_REWARD_BSTS,
-  MONTHLY_STREAK_BONUS_BSTS,
-  WEEKLY_STREAK_BONUS_BSTS,
 } from '@/lib/sidehustle-config';
 
 type BstPurchaseSheetProps = {
@@ -20,39 +16,19 @@ type BstPurchaseSheetProps = {
 };
 
 export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetProps) {
-  const { profile, buyBsts, claimConsistencyReward, isDark } = useGigStore();
-  const [rewardCopy, setRewardCopy] = useState<string | null>(null);
+  const { profile, buyBsts, isDark } = useGigStore();
+  const [statusCopy, setStatusCopy] = useState<string | null>(null);
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const panelClass = isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white';
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
-  const claimedToday = profile.last_reward_claimed_at?.slice(0, 10) === new Date().toISOString().slice(0, 10);
 
   function handleBuy(pack: (typeof BST_PACKAGES)[number]) {
     buyBsts(pack.amount);
-    setRewardCopy(`Mock purchase complete: ${pack.label} added ${pack.amount} ${CURRENCY_NAME}.`);
+    setStatusCopy(`Mock purchase complete: ${pack.label} added ${pack.amount.toLocaleString()} ${CURRENCY_NAME}.`);
     Alert.alert(
       'Mock purchase',
       `Checkout is not connected yet. ${pack.label} (${pack.price}) was added for the demo.`,
-    );
-  }
-
-  function handleReward() {
-    const result = claimConsistencyReward();
-
-    if (!result) {
-      setRewardCopy('Daily reward already claimed.');
-      return;
-    }
-
-    const bonuses = [
-      result.weeklyBonus ? `weekly streak +${WEEKLY_STREAK_BONUS_BSTS}` : null,
-      result.monthlyBonus ? `monthly streak +${MONTHLY_STREAK_BONUS_BSTS}` : null,
-    ].filter(Boolean);
-    setRewardCopy(
-      `Claimed ${result.amount} ${CURRENCY_NAME} for day ${result.dailyStreak}${
-        bonuses.length ? ` (${bonuses.join(', ')})` : ''
-      }.`,
     );
   }
 
@@ -63,7 +39,7 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
           <View className="mb-5 flex-row items-center justify-between">
             <View className="flex-1 pr-4">
               <Text className="text-sm font-bold text-orange-400">{CURRENCY_FULL_NAME}</Text>
-              <Text className={`text-3xl font-black ${titleClass}`}>Fuel your hustle</Text>
+              <Text className={`text-3xl font-black ${titleClass}`}>USD to BST Exchange</Text>
               {reason && <Text className={`mt-1 text-sm ${mutedClass}`}>{reason}</Text>}
             </View>
             <Pressable
@@ -84,13 +60,6 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
                 <Ionicons name="flame" size={28} color="#F97316" />
               </View>
             </View>
-            <PrimaryButton
-              label={claimedToday ? 'Daily claimed' : `Claim daily +${DAILY_REWARD_BSTS}`}
-              icon={claimedToday ? 'checkmark-circle' : 'calendar'}
-              tone="emerald"
-              disabled={claimedToday}
-              onPress={handleReward}
-            />
           </View>
 
           <View className="mb-4 gap-3">
@@ -106,18 +75,18 @@ export function BstPurchaseSheet({ visible, reason, onClose }: BstPurchaseSheetP
                   </View>
                   <View>
                     <Text className={`font-black ${titleClass}`}>{pack.label}</Text>
-                    <Text className={`text-sm ${mutedClass}`}>+{pack.amount} {CURRENCY_NAME}</Text>
+                    <Text className={`text-sm ${mutedClass}`}>+{pack.amount.toLocaleString()} {CURRENCY_NAME}</Text>
                   </View>
                 </View>
                 <View className="items-end">
                   <Text className={`font-black ${titleClass}`}>{pack.price}</Text>
-                  <Text className={`text-xs font-bold ${mutedClass}`}>Mock buy</Text>
+                  <Text className={`text-xs font-bold ${mutedClass}`}>{pack.value}</Text>
                 </View>
               </Pressable>
             ))}
           </View>
 
-          {rewardCopy && <Text className={`text-center text-sm font-semibold ${titleClass}`}>{rewardCopy}</Text>}
+          {statusCopy && <Text className={`text-center text-sm font-semibold ${titleClass}`}>{statusCopy}</Text>}
         </View>
       </View>
     </Modal>

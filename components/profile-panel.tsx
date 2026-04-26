@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
-import { CategorySelector } from '@/components/category-selector';
 import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
@@ -28,7 +27,6 @@ type ProfileDraft = {
   bio: string;
   birthDate: string;
   educationLevel: string;
-  interests: string[];
   isVerified: boolean;
   phoneNumber: string;
   phoneVerified: boolean;
@@ -41,7 +39,6 @@ function buildDraft(profile: ReturnType<typeof useGigStore>['profile']): Profile
     bio: profile.bio,
     birthDate: profile.birth_date,
     educationLevel: profile.education_level ?? '',
-    interests: profile.interests,
     isVerified: profile.is_verified,
     phoneNumber: profile.phone_number,
     phoneVerified: profile.phone_verified,
@@ -79,8 +76,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
       draft.phoneNumber !== savedDraft.phoneNumber ||
       draft.phoneVerified !== savedDraft.phoneVerified ||
       draft.username !== savedDraft.username ||
-      draft.isVerified !== savedDraft.isVerified ||
-      draft.interests.join('|') !== savedDraft.interests.join('|'),
+      draft.isVerified !== savedDraft.isVerified,
     [draft, savedDraft],
   );
 
@@ -106,11 +102,9 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
         bio: draft.bio.trim(),
         birth_date: draft.birthDate.trim(),
         education_level: educationLevel || null,
-        interests: draft.interests,
         is_verified: draft.isVerified,
         phone_number: draft.phoneNumber.trim(),
         phone_verified: draft.phoneVerified,
-        skills: draft.interests,
         username,
       });
       setDraft((current) => ({ ...current, educationLevel, username }));
@@ -335,28 +329,6 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
             placeholder="Optional"
             value={draft.educationLevel}
           />
-        </View>
-
-        <View className={`mb-5 rounded-[30px] border p-5 ${panelClass}`}>
-          <View className="mb-4 flex-row items-center justify-between">
-            <Text className={`text-xl font-black ${titleClass}`}>Categories</Text>
-            <Ionicons name="pricetags" size={22} color="#8B5CF6" />
-          </View>
-          {isEditing ? (
-            <CategorySelector
-              selected={draft.interests}
-              onChange={(interests) => setDraft((current) => ({ ...current, interests }))}
-              minSelected={1}
-            />
-          ) : (
-            <View className="flex-row flex-wrap gap-2">
-              {draft.interests.map((interest) => (
-                <View key={interest} className="rounded-full border border-emerald-400/30 bg-emerald-500/20 px-3 py-2">
-                  <Text className="text-sm font-bold text-emerald-600">{interest}</Text>
-                </View>
-              ))}
-            </View>
-          )}
         </View>
 
         <View className="mb-5 flex-row gap-3">

@@ -26,6 +26,7 @@ export type Profile = {
   weekly_streak: number;
   monthly_streak: number;
   last_reward_claimed_at: string | null;
+  bidder_access_unlocked_at: string | null;
   vouch_count: number;
   posted_vouch_count: number;
   rating: number;

@@ -2,8 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { Link, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import type { ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -19,7 +20,10 @@ import { useGigStore } from '@/lib/gig-store';
 import { getTaskCategoryLabels, getUnreadMessageCount, hasUnseenAcceptedOffer } from '@/lib/gig-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { gigHref } from '@/lib/routes';
+import { matchesSearchQuery } from '@/lib/search-utils';
 import { APP_NAME, CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
+
+type HustlesSection = 'ready' | 'pending' | 'finished';
 
 export default function MatchesScreen() {
   const {
@@ -34,10 +38,29 @@ export default function MatchesScreen() {
   } = useGigStore();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sectionTouched, setSectionTouched] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<HustlesSection, boolean>>({
+    ready: true,
+    pending: false,
+    finished: false,
+  });
 
   const readyHustles = matches.filter((match) => match.doer_id === profile.id && match.status === 'matched');
   const pendingBids = matches.filter((match) => match.doer_id === profile.id && match.status === 'pending');
   const completed = matches.filter((match) => match.doer_id === profile.id && match.status === 'completed');
+  const filteredReadyHustles = useMemo(
+    () => readyHustles.filter((match) => hustleMatchesQuery(match, searchQuery)),
+    [readyHustles, searchQuery],
+  );
+  const filteredPendingBids = useMemo(
+    () => pendingBids.filter((match) => hustleMatchesQuery(match, searchQuery)),
+    [pendingBids, searchQuery],
+  );
+  const filteredCompleted = useMemo(
+    () => completed.filter((match) => hustleMatchesQuery(match, searchQuery)),
+    [completed, searchQuery],
+  );
   const unseenAcceptedIds = useMemo(
     () => readyHustles.filter((match) => hasUnseenAcceptedOffer(match, profile.id)).map((match) => match.id),
     [readyHustles, profile.id],
@@ -84,6 +107,51 @@ export default function MatchesScreen() {
     );
   }
 
+  function toggleSection(section: HustlesSection) {
+    setSectionTouched(true);
+    setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
+  }
+
+  function updateSearchQuery(value: string) {
+    setSearchQuery(value);
+
+    if (!value.trim()) {
+      setSectionTouched(true);
+      setExpandedSections({ ready: false, pending: false, finished: false });
+    }
+  }
+
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      const hasAnyMatch = filteredReadyHustles.length > 0 || filteredPendingBids.length > 0 || filteredCompleted.length > 0;
+
+      setExpandedSections({
+        ready: filteredReadyHustles.length > 0 || !hasAnyMatch,
+        pending: filteredPendingBids.length > 0,
+        finished: filteredCompleted.length > 0,
+      });
+      return;
+    }
+
+    if (sectionTouched) {
+      return;
+    }
+
+    setExpandedSections({
+      ready: readyHustles.length > 0 || pendingBids.length === 0,
+      pending: readyHustles.length === 0 && pendingBids.length > 0,
+      finished: false,
+    });
+  }, [
+    filteredCompleted.length,
+    filteredPendingBids.length,
+    filteredReadyHustles.length,
+    pendingBids.length,
+    readyHustles.length,
+    searchQuery,
+    sectionTouched,
+  ]);
+
   useFocusEffect(
     useCallback(() => {
       if (unseenAcceptedIds.length > 0) {
@@ -106,37 +174,63 @@ export default function MatchesScreen() {
           </View>
         </View>
 
-        <SectionHeader title="Ready to unlock" count={readyHustles.length} icon="lock-open" />
-        {readyHustles.length === 0 ? (
-          <EmptyState copy="When a Gigachad picks your counter bid, the hustle lands here." />
-        ) : (
-          readyHustles.map((match) => (
-            <HustleCard
-              key={match.id}
-              match={match}
-              newAcceptance={hasUnseenAcceptedOffer(match, profile.id)}
-              unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
-              onUnlock={() => confirmUnlock(match)}
-              onComplete={() => confirmCompletionRequest(match)}
-            />
-          ))
-        )}
+        <View className="mb-4">
+          <SearchField
+            onChangeText={updateSearchQuery}
+            placeholder="Search hustles, gigs, names, location"
+            value={searchQuery}
+          />
+        </View>
 
-        <SectionHeader title="Pending bids" count={pendingBids.length} icon="time" />
-        {pendingBids.length === 0 ? (
-          <EmptyState copy="Your right-swipe bids wait here until the Gigachad picks you." />
-        ) : (
-          pendingBids.map((match) => <PendingBid key={match.id} match={match} />)
-        )}
+        <CollapsibleSection
+          count={filteredReadyHustles.length}
+          expanded={expandedSections.ready}
+          icon="lock-open"
+          onToggle={() => toggleSection('ready')}
+          title="Ready to unlock">
+          {filteredReadyHustles.length === 0 ? (
+            <EmptyState copy={searchQuery.trim() ? 'No matching ready hustles found.' : 'When a Gigachad picks your counter bid, the hustle lands here.'} />
+          ) : (
+            filteredReadyHustles.map((match) => (
+              <HustleCard
+                key={match.id}
+                match={match}
+                newAcceptance={hasUnseenAcceptedOffer(match, profile.id)}
+                unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
+                onUnlock={() => confirmUnlock(match)}
+                onComplete={() => confirmCompletionRequest(match)}
+              />
+            ))
+          )}
+        </CollapsibleSection>
 
-        <SectionHeader title="Finished hustles" count={completed.length} icon="medal" />
-        {completed.length === 0 ? (
-          <EmptyState copy="Completed gigs become Hustles Completed on your profile." />
-        ) : (
-          completed.map((match) => (
-            <CompletedHustleCard key={match.id} match={match} onRate={(rating) => void handleRate(match.id, rating)} />
-          ))
-        )}
+        <CollapsibleSection
+          count={filteredPendingBids.length}
+          expanded={expandedSections.pending}
+          icon="time"
+          onToggle={() => toggleSection('pending')}
+          title="Pending bids">
+          {filteredPendingBids.length === 0 ? (
+            <EmptyState copy={searchQuery.trim() ? 'No matching pending bids found.' : 'Your right-swipe bids wait here until the Gigachad picks you.'} />
+          ) : (
+            filteredPendingBids.map((match) => <PendingBid key={match.id} match={match} />)
+          )}
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          count={filteredCompleted.length}
+          expanded={expandedSections.finished}
+          icon="medal"
+          onToggle={() => toggleSection('finished')}
+          title="Finished hustles">
+          {filteredCompleted.length === 0 ? (
+            <EmptyState copy={searchQuery.trim() ? 'No matching finished hustles found.' : 'Completed gigs become Hustles Completed on your profile.'} />
+          ) : (
+            filteredCompleted.map((match) => (
+              <CompletedHustleCard key={match.id} match={match} onRate={(rating) => void handleRate(match.id, rating)} />
+            ))
+          )}
+        </CollapsibleSection>
       </ScrollView>
 
       <Modal transparent animationType="slide" visible={profileOpen} onRequestClose={() => setProfileOpen(false)}>
@@ -156,16 +250,75 @@ export default function MatchesScreen() {
   );
 }
 
-function SectionHeader({ title, count, icon }: { title: string; count: number; icon: keyof typeof Ionicons.glyphMap }) {
+function CollapsibleSection({
+  children,
+  count,
+  expanded,
+  icon,
+  onToggle,
+  title,
+}: {
+  children: ReactNode;
+  count: number;
+  expanded: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  onToggle: () => void;
+  title: string;
+}) {
   const { isDark } = useGigStore();
 
   return (
-    <View className="mb-3 mt-4 flex-row items-center justify-between">
-      <View className="flex-row items-center gap-2">
-        <Ionicons name={icon} size={18} color="#A78BFA" />
-        <Text className={`text-lg font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>{title}</Text>
-      </View>
-      <Text className={`rounded-full px-3 py-1 text-xs font-bold ${isDark ? 'bg-white/10 text-zinc-300' : 'bg-white text-zinc-700'}`}>{count}</Text>
+    <View className="mb-3">
+      <Pressable
+        accessibilityRole="button"
+        onPress={onToggle}
+        className={`min-h-12 flex-row items-center justify-between rounded-[20px] border px-4 ${
+          isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'
+        }`}>
+        <View className="flex-row items-center gap-2">
+          <Ionicons name={icon} size={17} color="#A78BFA" />
+          <Text className={`text-base font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>{title}</Text>
+        </View>
+        <View className="flex-row items-center gap-2">
+          <Text className={`rounded-full px-2.5 py-1 text-xs font-bold ${isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-700'}`}>
+            {count}
+          </Text>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={isDark ? '#FFFFFF' : '#18181B'} />
+        </View>
+      </Pressable>
+      {expanded ? <View className="pt-3">{children}</View> : null}
+    </View>
+  );
+}
+
+function SearchField({
+  onChangeText,
+  placeholder,
+  value,
+}: {
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  const { isDark } = useGigStore();
+
+  return (
+    <View className={`min-h-11 flex-row items-center gap-2 rounded-[20px] border px-3 ${
+      isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'
+    }`}>
+      <Ionicons name="search" size={17} color="#8B5CF6" />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#71717A"
+        className={`min-w-0 flex-1 text-sm font-semibold ${isDark ? 'text-white' : 'text-zinc-950'}`}
+      />
+      {value.trim() ? (
+        <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => onChangeText('')}>
+          <Ionicons name="close-circle" size={17} color="#71717A" />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -192,69 +345,72 @@ function HustleCard({
   const categoriesText = getTaskCategoryLabels(match.task).join(', ');
 
   return (
-    <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
-      <View className="mb-4 flex-row items-center gap-3">
-        {reveal ? <Avatar profile={match.poster} size={54} /> : <HiddenAvatar poster={match.poster} />}
-        <View className="flex-1">
-          <View className="flex-row items-center gap-2">
-            <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>
+    <View className={`mb-3 rounded-[24px] border p-4 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
+      <View className="flex-row gap-3">
+        <View className={`h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-[18px] ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+          {taskImageSource ? (
+            <Image source={taskImageSource} style={{ height: 72, width: 72 }} contentFit="cover" />
+          ) : (
+            <Ionicons name="briefcase" size={26} color="#A78BFA" />
+          )}
+        </View>
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-center gap-1.5">
+            <Text className={`flex-1 text-base font-black ${titleClass}`} numberOfLines={1}>
+              {match.task.title}
+            </Text>
+            <Ionicons name={reveal ? 'chatbubble-ellipses' : 'lock-closed'} size={17} color="#A78BFA" />
+          </View>
+          <View className="mt-1 flex-row items-center gap-1.5">
+            <Text className={`text-xs font-semibold ${mutedClass}`} numberOfLines={1}>
               {reveal ? match.poster.username : 'Gigachad hidden'}
             </Text>
             {reveal && <VerifiedBadge verified={match.poster.is_verified} compact />}
           </View>
-          <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>{match.task.title}</Text>
+          <Text className={`mt-1 text-xs ${mutedClass}`} numberOfLines={1}>
+            {categoriesText} - {match.task.location_label}
+          </Text>
+          <Text className={`mt-1 text-xs ${mutedClass}`} numberOfLines={1}>
+            {match.task.date_window || 'Flexible'} - Your bid ${match.counter_bid}
+          </Text>
         </View>
-        <View className="items-end gap-2">
+        <View className="items-end gap-1">
           {newAcceptance ? <NotificationBadge label="New" /> : null}
           {unreadMessageCount > 0 ? <NotificationBadge label={String(unreadMessageCount)} /> : null}
-          <Ionicons name={reveal ? 'chatbubble-ellipses' : 'lock-closed'} size={22} color="#A78BFA" />
         </View>
       </View>
 
-      {taskImageSource && (
-        <Image source={taskImageSource} style={{ borderRadius: 22, height: 128, marginBottom: 16, width: '100%' }} contentFit="cover" />
-      )}
-
-      <View className="mb-4 flex-row flex-wrap gap-2">
+      <View className="mt-3 flex-row flex-wrap gap-2">
+        <Chip icon="cash" label={`Budget $${match.task.budget}`} />
         <Chip icon="pricetag" label={categoriesText} />
-        <Chip icon="navigate-circle" label={match.task.location_label} />
-        <Chip icon="calendar" label={match.task.date_window || 'Flexible'} />
       </View>
-
-      <Text className={`mb-4 text-sm leading-5 ${mutedClass}`} numberOfLines={3}>{match.task.description}</Text>
-
-      <View className="mb-4 flex-row gap-3">
-        <Metric label="Your bid" value={`$${match.counter_bid}`} />
-        <Metric label="Budget" value={`$${match.task.budget}`} />
-      </View>
-
-      <View className={`mb-4 rounded-[24px] p-4 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
-        <Text className="mb-1 text-xs font-bold text-orange-400">Your note</Text>
-        <Text className={`text-base leading-6 ${titleClass}`}>{match.bid_note}</Text>
-      </View>
+      <Text className={`mt-2 text-xs leading-5 ${mutedClass}`} numberOfLines={1}>{match.bid_note}</Text>
 
       {reveal ? (
-        <View className="gap-3">
+        <View className="mt-3 flex-row gap-2">
           <Link href={{ pathname: '/chat/[matchId]', params: { matchId: match.id } }} asChild>
-            <Pressable accessibilityRole="button" className="min-h-12 flex-row items-center justify-center gap-2 rounded-3xl bg-violet px-5">
-              <Ionicons name="chatbubbles" size={18} color="#FFFFFF" />
-              <Text className="text-sm font-bold text-white">Open Chat</Text>
+            <Pressable accessibilityRole="button" className="min-h-10 flex-1 flex-row items-center justify-center gap-2 rounded-full bg-violet px-4">
+              <Ionicons name="chatbubbles" size={16} color="#FFFFFF" />
+              <Text className="text-xs font-bold text-white">Chat</Text>
             </Pressable>
           </Link>
           <PrimaryButton
-            label={completionRequested ? 'Waiting for confirmation' : 'Mark Completed'}
+            label={completionRequested ? 'Waiting' : 'Complete'}
             icon={completionRequested ? 'time' : 'checkmark'}
             tone="ghost"
             disabled={completionRequested}
             onPress={onComplete}
+            style={{ flex: 1 }}
           />
         </View>
       ) : (
-        <PrimaryButton
-          label={`Unlock (${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME})`}
-          icon="flame"
-          onPress={onUnlock}
-        />
+        <View className="mt-3">
+          <PrimaryButton
+            label={`Unlock (${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME})`}
+            icon="flame"
+            onPress={onUnlock}
+          />
+        </View>
       )}
     </View>
   );
@@ -275,14 +431,14 @@ function CompletedHustleCard({ match, onRate }: { match: EnrichedMatch; onRate: 
   const reveal = match.is_unlocked;
 
   return (
-    <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-emerald-400/20 bg-emerald-500/10' : 'border-emerald-200 bg-emerald-50'}`}>
-      <View className="mb-4 flex-row items-center gap-3">
-        {reveal ? <Avatar profile={match.poster} size={54} /> : <HiddenAvatar poster={match.poster} />}
+    <View className={`mb-2 rounded-[18px] border p-3 ${isDark ? 'border-emerald-400/20 bg-emerald-500/10' : 'border-emerald-200 bg-emerald-50'}`}>
+      <View className="mb-2 flex-row items-center gap-2.5">
+        {reveal ? <Avatar profile={match.poster} size={36} /> : <HiddenAvatar poster={match.poster} size={36} />}
         <View className="flex-1">
-          <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>
+          <Text className={`text-sm font-black ${titleClass}`} numberOfLines={1}>
             {match.task.title}
           </Text>
-          <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>
+          <Text className={`text-xs ${mutedClass}`} numberOfLines={1}>
             {reveal ? `Completed for Gigachad ${match.poster.username}` : 'Hustle completed'}
           </Text>
         </View>
@@ -290,15 +446,16 @@ function CompletedHustleCard({ match, onRate }: { match: EnrichedMatch; onRate: 
       </View>
 
       <StarRating
+        compact
         label={match.poster_rating_by_doer ? `You rated the Gigachad ${match.poster_rating_by_doer}/5` : 'Rate Gigachad'}
         value={match.poster_rating_by_doer}
         onRate={onRate}
       />
 
       <Link href={gigHref(match.task.id)} asChild>
-        <Pressable accessibilityRole="button" className={`mt-3 min-h-12 flex-row items-center justify-center gap-2 rounded-3xl border px-5 ${isDark ? 'border-white/10 bg-white/10' : 'border-emerald-200 bg-white'}`}>
-          <Ionicons name="briefcase" size={18} color={isDark ? '#FFFFFF' : '#065F46'} />
-          <Text className={`text-sm font-bold ${isDark ? 'text-white' : 'text-emerald-900'}`}>Open Gig</Text>
+        <Pressable accessibilityRole="button" className={`mt-2 min-h-9 flex-row items-center justify-center gap-2 rounded-full border px-3 ${isDark ? 'border-white/10 bg-white/10' : 'border-emerald-200 bg-white'}`}>
+          <Ionicons name="briefcase" size={16} color={isDark ? '#FFFFFF' : '#065F46'} />
+          <Text className={`text-xs font-bold ${isDark ? 'text-white' : 'text-emerald-900'}`}>Open Gig</Text>
         </Pressable>
       </Link>
     </View>
@@ -311,29 +468,31 @@ function PendingBid({ match }: { match: EnrichedMatch }) {
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
 
   return (
-    <View className={`mb-3 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
-      <View className="mb-3 flex-row items-center justify-between gap-3">
-        <Text className={`flex-1 text-lg font-black ${titleClass}`} numberOfLines={1}>{match.task.title}</Text>
+    <View className={`mb-2 rounded-[20px] border p-3 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
+      <View className="mb-2 flex-row items-center justify-between gap-3">
+        <Text className={`flex-1 text-base font-black ${titleClass}`} numberOfLines={1}>{match.task.title}</Text>
         <Text className="rounded-full bg-violet/20 px-3 py-1 text-xs font-bold text-violet-300">${match.counter_bid}</Text>
       </View>
-      <Text className={`mb-2 text-sm ${mutedClass}`}>{match.availability_window || 'Flexible availability'}</Text>
-      <Text className={`text-sm leading-5 ${mutedClass}`}>{match.bid_note}</Text>
+      <Text className={`mb-1 text-xs ${mutedClass}`}>{match.availability_window || 'Flexible availability'}</Text>
+      <Text className={`text-xs leading-5 ${mutedClass}`} numberOfLines={1}>{match.bid_note}</Text>
     </View>
   );
 }
 
-function HiddenAvatar({ poster }: { poster: Profile }) {
+function HiddenAvatar({ poster, size = 56 }: { poster: Profile; size?: number }) {
   const avatarSource = resolveImageSource(poster.avatar_url);
 
   return (
-    <View className="h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-violet/25">
+    <View
+      className="items-center justify-center overflow-hidden rounded-full border border-white/10 bg-violet/25"
+      style={{ height: size, width: size }}>
       {avatarSource ? (
         <>
-          <Image source={avatarSource} style={{ height: 56, width: 56 }} contentFit="cover" />
+          <Image source={avatarSource} style={{ height: size, width: size }} contentFit="cover" />
           <BlurView intensity={30} tint="dark" className="absolute inset-0" />
         </>
       ) : (
-        <Ionicons name="person" size={24} color="#C4B5FD" />
+        <Ionicons name="person" size={Math.max(20, size * 0.42)} color="#C4B5FD" />
       )}
     </View>
   );
@@ -343,22 +502,29 @@ function Chip({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: st
   const { isDark } = useGigStore();
 
   return (
-    <View className={`flex-row items-center gap-1 rounded-full px-3 py-2 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+    <View className={`flex-row items-center gap-1 rounded-full px-2.5 py-1.5 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
       <Ionicons name={icon} size={14} color="#8B5CF6" />
       <Text className={`text-xs font-bold ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`} numberOfLines={1}>{label}</Text>
     </View>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  const { isDark } = useGigStore();
-
-  return (
-    <View className={`flex-1 rounded-[22px] px-3 py-3 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
-      <Text className={`text-xs font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>{label}</Text>
-      <Text className={`mt-1 text-xl font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>{value}</Text>
-    </View>
-  );
+function hustleMatchesQuery(match: EnrichedMatch, query: string) {
+  return matchesSearchQuery(query, [
+    match.poster.username,
+    match.poster.bio,
+    match.task.title,
+    match.task.description,
+    match.task.location_label,
+    match.task.date_window,
+    getTaskCategoryLabels(match.task),
+    match.bid_note,
+    match.availability_window,
+    match.counter_bid,
+    match.task.budget,
+    match.status,
+    match.is_unlocked ? 'unlocked chat open' : 'locked',
+  ]);
 }
 
 function EmptyState({ copy }: { copy: string }) {

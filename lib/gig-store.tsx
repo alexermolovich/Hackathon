@@ -20,10 +20,8 @@ import {
 import { defaultProfile } from './default-profile';
 import {
   CHAT_UNLOCK_COST_BSTS,
-  DAILY_REWARD_BSTS,
-  MONTHLY_STREAK_BONUS_BSTS,
+  SEE_MORE_BIDDERS_COST_BSTS,
   SIGNUP_BONUS_BSTS,
-  WEEKLY_STREAK_BONUS_BSTS,
 } from './sidehustle-config';
 import { firebaseAuth, firebaseDb, hasFirebaseConfig } from './firebase';
 import {
@@ -97,13 +95,6 @@ type PhoneActionResult = StoreActionResult & {
   phone?: string;
 };
 
-type RewardResult = {
-  amount: number;
-  dailyStreak: number;
-  weeklyBonus: boolean;
-  monthlyBonus: boolean;
-};
-
 type GigStoreValue = {
   profile: Profile;
   profiles: Profile[];
@@ -125,6 +116,7 @@ type GigStoreValue = {
   submitMatchedBid: (task: Task, input: BidInput) => Promise<GigMatch>;
   likeBack: (matchId: string) => Promise<void>;
   unlockChat: (matchId: string) => Promise<boolean>;
+  unlockAllBidders: () => Promise<boolean>;
   requestMatchCompletion: (matchId: string) => Promise<void>;
   completeMatch: (matchId: string) => Promise<void>;
   rateMatch: (matchId: string, rating: number) => Promise<boolean>;
@@ -140,7 +132,6 @@ type GigStoreValue = {
   completeOnboarding: (input: OnboardingInput) => Promise<void>;
   updateProfileDetails: (input: ProfileUpdateInput) => Promise<void>;
   buyBsts: (amount: number) => void;
-  claimConsistencyReward: () => RewardResult | null;
   updateRadius: (radius: number) => void;
   updateInterests: (interests: string[]) => void;
   updateLocation: (coords: Coordinates) => void;
@@ -160,10 +151,6 @@ function swipeContextStorageKey(profileId: string) {
 
 function dedupeLocationMessages(items: Message[]) {
   return items.filter((message) => !message.content.startsWith(TASK_LOCATION_MESSAGE_PREFIX));
-}
-
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function getString(value: unknown) {
@@ -273,6 +260,7 @@ function buildProfileFromRow(id: string, row?: Record<string, unknown> | null, c
     weekly_streak: getNumber(row?.weekly_streak, current.weekly_streak),
     monthly_streak: getNumber(row?.monthly_streak, current.monthly_streak),
     last_reward_claimed_at: getString(row?.last_reward_claimed_at) || null,
+    bidder_access_unlocked_at: getString(row?.bidder_access_unlocked_at) || null,
     vouch_count: getNumber(row?.vouch_count, current.vouch_count),
     posted_vouch_count: getNumber(row?.posted_vouch_count, current.posted_vouch_count),
     rating: getNumber(row?.rating, current.rating),
@@ -331,6 +319,7 @@ function buildPrivateProfileRecord(profile: Profile) {
     weekly_streak: profile.weekly_streak,
     monthly_streak: profile.monthly_streak,
     last_reward_claimed_at: profile.last_reward_claimed_at,
+    bidder_access_unlocked_at: profile.bidder_access_unlocked_at,
     vouch_count: profile.vouch_count,
     posted_vouch_count: profile.posted_vouch_count,
     rating: profile.rating,
@@ -917,6 +906,31 @@ export function GigProvider({ children }: PropsWithChildren) {
     return true;
   }
 
+  async function unlockAllBidders() {
+    if (profile.bidder_access_unlocked_at) {
+      return true;
+    }
+
+    if (profile.credits < SEE_MORE_BIDDERS_COST_BSTS) {
+      return false;
+    }
+
+    const unlockedAt = new Date().toISOString();
+    const nextProfile = {
+      ...profile,
+      credits: profile.credits - SEE_MORE_BIDDERS_COST_BSTS,
+      bidder_access_unlocked_at: unlockedAt,
+    };
+
+    syncProfile(nextProfile);
+
+    if (firebaseDb) {
+      await persistProfile(nextProfile);
+    }
+
+    return true;
+  }
+
   async function requestMatchCompletion(matchId: string) {
     const match = matches.find((item) => item.id === matchId);
 
@@ -1352,41 +1366,6 @@ export function GigProvider({ children }: PropsWithChildren) {
     void persistProfile(nextProfile);
   }
 
-  function claimConsistencyReward() {
-    const claimedAt = profile.last_reward_claimed_at;
-
-    if (claimedAt?.slice(0, 10) === todayKey()) {
-      return null;
-    }
-
-    const nextDailyStreak = profile.daily_streak + 1;
-    const weeklyBonus = nextDailyStreak % 7 === 0;
-    const monthlyBonus = nextDailyStreak % 30 === 0;
-    const amount =
-      DAILY_REWARD_BSTS +
-      (weeklyBonus ? WEEKLY_STREAK_BONUS_BSTS : 0) +
-      (monthlyBonus ? MONTHLY_STREAK_BONUS_BSTS : 0);
-
-    const nextProfile = {
-      ...profile,
-      credits: profile.credits + amount,
-      daily_streak: nextDailyStreak,
-      weekly_streak: weeklyBonus ? profile.weekly_streak + 1 : profile.weekly_streak,
-      monthly_streak: monthlyBonus ? profile.monthly_streak + 1 : profile.monthly_streak,
-      last_reward_claimed_at: new Date().toISOString(),
-    };
-
-    syncProfile(nextProfile);
-    void persistProfile(nextProfile);
-
-    return {
-      amount,
-      dailyStreak: nextDailyStreak,
-      weeklyBonus,
-      monthlyBonus,
-    };
-  }
-
   function updateRadius(radius: number) {
     const nextRadius = Math.min(100, Math.max(1, Math.round(radius)));
     const nextProfile = { ...profile, search_radius: nextRadius };
@@ -1470,6 +1449,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     submitMatchedBid,
     likeBack,
     unlockChat,
+    unlockAllBidders,
     requestMatchCompletion,
     completeMatch,
     rateMatch,
@@ -1485,7 +1465,6 @@ export function GigProvider({ children }: PropsWithChildren) {
     completeOnboarding,
     updateProfileDetails,
     buyBsts,
-    claimConsistencyReward,
     updateRadius,
     updateInterests,
     updateLocation,

@@ -24,6 +24,10 @@ export function CategorySelector({ selected, onChange, minSelected = 0, showSear
 
   function toggleCategory(category: string) {
     if (selected.includes(category)) {
+      if (selected.length <= minSelected) {
+        return;
+      }
+
       onChange(selected.filter((item) => item !== category));
       return;
     }
@@ -55,11 +59,14 @@ export function CategorySelector({ selected, onChange, minSelected = 0, showSear
       <View className="mb-3 flex-row flex-wrap gap-2">
         {POPULAR_CATEGORIES.map((category) => {
           const active = selected.includes(category);
+          const lockedActive = active && selected.length <= minSelected;
 
           return (
             <Pressable
               key={category}
               accessibilityRole="button"
+              accessibilityState={{ disabled: lockedActive }}
+              disabled={lockedActive}
               onPress={() => toggleCategory(category)}
               className={`min-h-10 flex-row items-center gap-1 rounded-full border px-3 ${
                 active
@@ -67,7 +74,7 @@ export function CategorySelector({ selected, onChange, minSelected = 0, showSear
                   : isDark
                     ? 'border-white/10 bg-white/10'
                     : 'border-zinc-200 bg-white'
-              }`}>
+              } ${lockedActive ? 'opacity-70' : ''}`}>
               {active && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
               <Text className={`text-sm font-bold ${active || isDark ? 'text-white' : 'text-zinc-950'}`}>
                 {category}
@@ -78,16 +85,24 @@ export function CategorySelector({ selected, onChange, minSelected = 0, showSear
       </View>
       {customSelected.length > 0 && (
         <View className="mb-3 flex-row flex-wrap gap-2">
-          {customSelected.map((category) => (
-            <Pressable
-              key={category}
-              accessibilityRole="button"
-              onPress={() => toggleCategory(category)}
-              className="min-h-10 flex-row items-center gap-1 rounded-full border border-orange-400/40 bg-orange-500/15 px-3">
-              <Text className="text-sm font-bold text-orange-400">{category}</Text>
-              <Ionicons name="close-circle" size={15} color="#F97316" />
-            </Pressable>
-          ))}
+          {customSelected.map((category) => {
+            const lockedActive = selected.length <= minSelected;
+
+            return (
+              <Pressable
+                key={category}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: lockedActive }}
+                disabled={lockedActive}
+                onPress={() => toggleCategory(category)}
+                className={`min-h-10 flex-row items-center gap-1 rounded-full border border-orange-400/40 bg-orange-500/15 px-3 ${
+                  lockedActive ? 'opacity-70' : ''
+                }`}>
+                <Text className="text-sm font-bold text-orange-400">{category}</Text>
+                <Ionicons name={lockedActive ? 'checkmark-circle' : 'close-circle'} size={15} color="#F97316" />
+              </Pressable>
+            );
+          })}
         </View>
       )}
       {showSearch && (

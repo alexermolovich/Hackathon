@@ -24,6 +24,7 @@ export const defaultProfile: Profile = {
   weekly_streak: 0,
   monthly_streak: 0,
   last_reward_claimed_at: null,
+  bidder_access_unlocked_at: null,
   vouch_count: 0,
   posted_vouch_count: 0,
   rating: 5,

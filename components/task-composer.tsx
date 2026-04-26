@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
 import {
@@ -20,10 +20,11 @@ import { PrimaryButton } from '@/components/primary-button';
 import type { Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
 import { approximateLocationLabel } from '@/lib/geo';
+import { createPersistentProfileImageRef } from '@/lib/profile-images';
 import { resolveImageSource } from '@/lib/repo-images';
-import { APP_NAME, BOOST_COST_PER_DAY_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
+import { APP_NAME, BOOST_OPTIONS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
-const boostDurations = [1, 3, 7];
+const defaultBoostOption = BOOST_OPTIONS[1];
 const webInputReset = { boxShadow: 'none', outlineStyle: 'none' } as const;
 
 type TaskComposerProps = {
@@ -54,13 +55,13 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
   const [visibleMonth, setVisibleMonth] = useState(startOfMonth(new Date()));
   const [status, setStatus] = useState<Task['status']>(task?.status ?? 'open');
   const [isBoosted, setIsBoosted] = useState(task?.is_boosted ?? false);
-  const [boostDays, setBoostDays] = useState(task?.boost_days || 3);
+  const [boostDays, setBoostDays] = useState(task?.boost_days || defaultBoostOption.days);
   const [imageUrls, setImageUrls] = useState<string[]>(task?.image_urls ?? []);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [publishAttempted, setPublishAttempted] = useState(false);
 
   const boostCost = useMemo(
-    () => (isBoosted ? boostDays * BOOST_COST_PER_DAY_BSTS : 0),
+    () => (isBoosted ? getBoostCost(boostDays) : 0),
     [boostDays, isBoosted],
   );
   const inputClass = (hasError = false) =>
@@ -119,7 +120,7 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
     setDateWindow(task.date_window);
     setStatus(task.status);
     setIsBoosted(task.is_boosted);
-    setBoostDays(task.boost_days || 3);
+    setBoostDays(task.boost_days || defaultBoostOption.days);
     setImageUrls(task.image_urls);
     setPublishAttempted(false);
   }, [task]);
@@ -166,13 +167,19 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
       allowsMultipleSelection: true,
       selectionLimit: 4,
       quality: 0.8,
+      base64: Platform.OS === 'web',
     });
 
     if (result.canceled) {
       return;
     }
 
-    setImageUrls((current) => [...current, ...result.assets.map((asset) => asset.uri)].slice(0, 4));
+    try {
+      const imageRefs = await Promise.all(result.assets.map((asset) => createPersistentProfileImageRef(asset)));
+      setImageUrls((current) => [...current, ...imageRefs].slice(0, 4));
+    } catch {
+      Alert.alert('Photo save failed', 'Choose another image and try again.');
+    }
   }
 
   function removeImage(uri: string) {
@@ -335,16 +342,7 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
             {imageUrls.length > 0 && (
               <View className="flex-row flex-wrap gap-2">
                 {imageUrls.map((uri) => (
-                  <View key={uri} className="relative overflow-hidden rounded-[18px]">
-                    <Image source={resolveImageSource(uri)} style={{ height: 76, width: 76 }} contentFit="cover" />
-                    <Pressable
-                      accessibilityLabel="Remove image"
-                      accessibilityRole="button"
-                      onPress={() => removeImage(uri)}
-                      className="absolute right-1 top-1 h-7 w-7 items-center justify-center rounded-full bg-black/70">
-                      <Ionicons name="close" size={16} color="#FFFFFF" />
-                    </Pressable>
-                  </View>
+                  <ImagePreview key={uri} uri={uri} onRemove={() => removeImage(uri)} />
                 ))}
               </View>
             )}
@@ -382,26 +380,29 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
         {isBoosted && (
           <Field label="Boost duration" labelClass={labelClass}>
             <View className="flex-row gap-2">
-              {boostDurations.map((days) => {
-                const selected = boostDays === days;
+              {BOOST_OPTIONS.map((option) => {
+                const selected = boostDays === option.days;
 
                 return (
                   <Pressable
-                    key={days}
+                    key={option.days}
                     accessibilityRole="button"
-                    onPress={() => setBoostDays(days)}
+                    onPress={() => setBoostDays(option.days)}
                     className={`min-h-12 flex-1 items-center justify-center rounded-full border ${
                       selected ? 'border-orange-400 bg-orange-500' : softClass
                     }`}>
                     <Text className={`font-black ${selected || isDark ? 'text-white' : 'text-zinc-950'}`}>
-                      {days}d
+                      {option.days}d
+                    </Text>
+                    <Text className={`text-xs font-bold ${selected || isDark ? 'text-white/80' : mutedClass}`}>
+                      {option.cost} {CURRENCY_NAME}
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
             <Text className={`mt-2 text-xs font-semibold ${mutedClass}`}>
-              Posting is free. Boosting spends {BOOST_COST_PER_DAY_BSTS} {CURRENCY_NAME} per day.
+              Posting is free. Boosting spends 50-100 {CURRENCY_NAME} depending on duration.
             </Text>
             <View className={`mt-3 rounded-[22px] border p-4 ${softClass}`}>
               <Text className={`text-sm font-bold ${mutedClass}`}>BSTs available</Text>
@@ -475,8 +476,35 @@ function Field({
   );
 }
 
+function ImagePreview({ onRemove, uri }: { onRemove: () => void; uri: string }) {
+  const imageSource = resolveImageSource(uri);
+
+  return (
+    <View className="relative h-[76px] w-[76px] overflow-hidden rounded-[18px] bg-zinc-800">
+      {imageSource ? (
+        <Image source={imageSource} style={{ height: 76, width: 76 }} contentFit="cover" />
+      ) : (
+        <View className="h-full w-full items-center justify-center bg-violet/20">
+          <Ionicons name="image" size={22} color="#C4B5FD" />
+        </View>
+      )}
+      <Pressable
+        accessibilityLabel="Remove image"
+        accessibilityRole="button"
+        onPress={onRemove}
+        className="absolute right-1 top-1 h-7 w-7 items-center justify-center rounded-full bg-black/70">
+        <Ionicons name="close" size={16} color="#FFFFFF" />
+      </Pressable>
+    </View>
+  );
+}
+
 function fallbackLocationLabel(latitude: number, longitude: number) {
   return approximateLocationLabel({ latitude, longitude });
+}
+
+function getBoostCost(days: number) {
+  return BOOST_OPTIONS.find((option) => option.days === days)?.cost ?? defaultBoostOption.cost;
 }
 
 function formatGeocodedLabel(place: Location.LocationGeocodedAddress) {

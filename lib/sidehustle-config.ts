@@ -5,12 +5,14 @@ export const CURRENCY_NAME = 'BSTs';
 export const CURRENCY_FULL_NAME = 'Blood & Sweat Tokens';
 
 export const SIGNUP_BONUS_BSTS = 25;
-export const CHAT_UNLOCK_COST_BSTS = 5;
-export const BOOST_COST_PER_DAY_BSTS = 3;
+export const CHAT_UNLOCK_COST_BSTS = 10;
+export const SEE_MORE_BIDDERS_COST_BSTS = 30;
 
-export const DAILY_REWARD_BSTS = 2;
-export const WEEKLY_STREAK_BONUS_BSTS = 10;
-export const MONTHLY_STREAK_BONUS_BSTS = 50;
+export const BOOST_OPTIONS = [
+  { days: 1, cost: 50 },
+  { days: 3, cost: 75 },
+  { days: 7, cost: 100 },
+] as const;
 
 export const POPULAR_CATEGORIES = [
   'Moving',
@@ -46,7 +48,7 @@ export const EDUCATION_LEVELS = [
 ] as const;
 
 export const BST_PACKAGES = [
-  { id: 'spark', label: 'Spark Pack', amount: 25, price: '$1.99' },
-  { id: 'grind', label: 'Grind Pack', amount: 70, price: '$4.99' },
-  { id: 'blaze', label: 'Blaze Pack', amount: 160, price: '$9.99' },
+  { id: 'pocket', label: 'Pocket Change', amount: 200, price: '$1.99', value: 'Standard' },
+  { id: 'grinder', label: 'The Grinder', amount: 550, price: '$4.99', value: '10% Bonus' },
+  { id: 'pro', label: 'Pro Hustler', amount: 1200, price: '$9.99', value: '20% Bonus' },
 ] as const;

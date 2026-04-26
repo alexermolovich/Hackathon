@@ -35,7 +35,6 @@ export default function GigDeckScreen() {
     profiles,
     profile,
     submitBid,
-    isLiveMode,
     isDark,
     updateRadius,
     updateInterests,
@@ -180,14 +179,17 @@ export default function GigDeckScreen() {
   }
 
   function confirmClearSwipeContext() {
-    Alert.alert(
-      'Clear passed gigs?',
-      'This brings previously passed gigs back into your swipe deck.',
-      [
-        { text: 'No', style: 'cancel' },
-        { text: 'Yes', onPress: clearSwipeContext },
-      ],
-    );
+    setSettingsOpen(false);
+    setTimeout(() => {
+      Alert.alert(
+        'Clear passed gigs?',
+        'This brings previously passed gigs back into your swipe deck.',
+        [
+          { text: 'No', style: 'cancel' },
+          { text: 'Yes', onPress: clearSwipeContext },
+        ],
+      );
+    }, 0);
   }
 
   useFocusEffect(
@@ -222,7 +224,6 @@ export default function GigDeckScreen() {
                   isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'
                 }`}>
                 <Ionicons name="options" size={21} color={isDark ? '#FFFFFF' : '#18181B'} />
-                <View className={`absolute right-2 top-2 h-2 w-2 rounded-full ${isLiveMode ? 'bg-emerald' : 'bg-violet'}`} />
               </Pressable>
               <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
               <ProfileTrigger onPress={() => setProfileOpen(true)} />
@@ -362,20 +363,20 @@ export default function GigDeckScreen() {
 
       <Modal transparent animationType="slide" visible={settingsOpen} onRequestClose={() => setSettingsOpen(false)}>
         <View className="flex-1 justify-end bg-black/60">
-          <View className={`max-h-[88%] rounded-t-[34px] border px-5 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-8">
-              <View className="mb-5 flex-row items-center justify-between">
-                <View>
-                  <Text className="text-sm font-bold text-orange-400">{APP_NAME}</Text>
-                  <Text className={`text-3xl font-black ${titleClass}`}>Tune gigs</Text>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setSettingsOpen(false)}
-                  className={`h-11 w-11 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-white'}`}>
-                  <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
-                </Pressable>
+          <View className={`max-h-[88%] rounded-t-[34px] border ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
+            <View className={`z-10 flex-row items-center justify-between border-b px-5 pb-4 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
+              <View>
+                <Text className="text-sm font-bold text-orange-400">{APP_NAME}</Text>
+                <Text className={`text-3xl font-black ${titleClass}`}>Tune gigs</Text>
               </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setSettingsOpen(false)}
+                className={`h-11 w-11 items-center justify-center rounded-full ${isDark ? 'bg-white/10' : 'bg-white'}`}>
+                <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="px-5 pb-8 pt-5">
               <View className={`mb-5 rounded-[28px] border p-5 ${panelClass}`}>
                 <RadiusSlider value={profile.search_radius} onChange={updateRadius} />
                 <View className={`mt-5 flex-row items-center justify-between rounded-[22px] px-4 py-3 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
@@ -400,7 +401,7 @@ export default function GigDeckScreen() {
               </View>
               <View className={`mb-5 rounded-[28px] border p-5 ${panelClass}`}>
                 <Text className={`mb-3 text-xl font-black ${titleClass}`}>Categories</Text>
-                <CategorySelector selected={profile.interests} onChange={updateInterests} minSelected={1} />
+                <CategorySelector selected={profile.interests} onChange={updateInterests} minSelected={5} />
               </View>
             </ScrollView>
           </View>

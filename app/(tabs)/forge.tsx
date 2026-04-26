@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Link, router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -19,7 +19,8 @@ import { getTaskCategoryLabels, getUnreadMessageCount, hasUnseenCounterBid } fro
 import { formatVisibleRating, visibleRatingValue } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { gigHref } from '@/lib/routes';
-import { APP_NAME } from '@/lib/sidehustle-config';
+import { matchesSearchQuery } from '@/lib/search-utils';
+import { APP_NAME, CURRENCY_NAME, SEE_MORE_BIDDERS_COST_BSTS } from '@/lib/sidehustle-config';
 
 type ForgeView = 'applicants' | 'posted' | 'archived';
 type SortMode = 'bid' | 'date' | 'rating' | 'experience';
@@ -37,12 +38,24 @@ const sortOptions: {
 ];
 
 export default function ForgeScreen() {
-  const { profile, tasks, matches, messages, likeBack, completeMatch, markCounterBidsSeen, isDark } = useGigStore();
+  const {
+    profile,
+    tasks,
+    matches,
+    messages,
+    likeBack,
+    completeMatch,
+    unlockAllBidders,
+    markCounterBidsSeen,
+    isDark,
+  } = useGigStore();
   const [composerOpen, setComposerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseReason, setPurchaseReason] = useState<string | undefined>();
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [activeView, setActiveView] = useState<ForgeView>('applicants');
+  const [searchQuery, setSearchQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('bid');
 
   const myTasks = tasks.filter((task) => task.poster_id === profile.id);
@@ -67,14 +80,31 @@ export default function ForgeScreen() {
       return b.doer.vouch_count - a.doer.vouch_count;
     });
   }, [matches, profile.id, sortMode]);
+  const filteredApplicantMatches = useMemo(
+    () => applicantMatches.filter((match) => applicantMatchesQuery(match, searchQuery)),
+    [applicantMatches, searchQuery],
+  );
+  const filteredOpenTasks = useMemo(
+    () => openTasks.filter((task) => taskMatchesQuery(task, searchQuery)),
+    [openTasks, searchQuery],
+  );
+  const filteredArchivedTasks = useMemo(
+    () => archivedTasks.filter((task) => taskMatchesQuery(task, searchQuery)),
+    [archivedTasks, searchQuery],
+  );
+  const biddersUnlocked = Boolean(profile.bidder_access_unlocked_at);
+  const visibleApplicantMatches = useMemo(
+    () => (biddersUnlocked ? filteredApplicantMatches : filteredApplicantMatches.slice(0, 2)),
+    [biddersUnlocked, filteredApplicantMatches],
+  );
+  const hiddenBidderCount = Math.max(0, filteredApplicantMatches.length - visibleApplicantMatches.length);
   const unseenCounterBidIds = useMemo(
-    () => applicantMatches.filter((match) => hasUnseenCounterBid(match, profile.id)).map((match) => match.id),
-    [applicantMatches, profile.id],
+    () => visibleApplicantMatches.filter((match) => hasUnseenCounterBid(match, profile.id)).map((match) => match.id),
+    [profile.id, visibleApplicantMatches],
   );
 
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
-  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
 
   function pickHustler(matchId: string) {
     void likeBack(matchId);
@@ -103,6 +133,63 @@ export default function ForgeScreen() {
     );
   }
 
+  async function handleUnlockBidders() {
+    const ok = await unlockAllBidders();
+
+    if (!ok) {
+      setPurchaseReason(`Seeing all bidders costs ${SEE_MORE_BIDDERS_COST_BSTS} ${CURRENCY_NAME}.`);
+      setPurchaseOpen(true);
+    }
+  }
+
+  function confirmUnlockBidders() {
+    Alert.alert(
+      'See all bidders?',
+      `Spend ${SEE_MORE_BIDDERS_COST_BSTS} ${CURRENCY_NAME} to unlock every bidder for your gigs.`,
+      [
+        { text: 'No', style: 'cancel' },
+        { text: 'Yes', onPress: () => void handleUnlockBidders() },
+      ],
+    );
+  }
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      return;
+    }
+
+    const activeCount =
+      activeView === 'applicants'
+        ? filteredApplicantMatches.length
+        : activeView === 'posted'
+          ? filteredOpenTasks.length
+          : filteredArchivedTasks.length;
+
+    if (activeCount > 0) {
+      return;
+    }
+
+    if (filteredApplicantMatches.length > 0) {
+      setActiveView('applicants');
+      return;
+    }
+
+    if (filteredOpenTasks.length > 0) {
+      setActiveView('posted');
+      return;
+    }
+
+    if (filteredArchivedTasks.length > 0) {
+      setActiveView('archived');
+    }
+  }, [
+    activeView,
+    filteredApplicantMatches.length,
+    filteredArchivedTasks.length,
+    filteredOpenTasks.length,
+    searchQuery,
+  ]);
+
   useFocusEffect(
     useCallback(() => {
       if (activeView === 'applicants' && unseenCounterBidIds.length > 0) {
@@ -120,64 +207,80 @@ export default function ForgeScreen() {
             <Text className={`text-3xl font-black ${titleClass}`}>Create Gig</Text>
           </View>
           <View className="flex-row items-center gap-2">
-            <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
+            <CreditBadge
+              credits={profile.credits}
+              onPress={() => {
+                setPurchaseReason(undefined);
+                setPurchaseOpen(true);
+              }}
+            />
             <ProfileTrigger onPress={() => setProfileOpen(true)} />
           </View>
         </View>
 
-        <View className="mb-5 items-center justify-center">
+        <View className="mb-4 flex-row gap-2">
+          <SearchField
+            onChangeText={setSearchQuery}
+            placeholder="Search gigs, hustlers, location"
+            value={searchQuery}
+          />
           <Pressable
             accessibilityRole="button"
             onPress={() => setComposerOpen(true)}
-            className="h-20 w-20 items-center justify-center rounded-full bg-orange-500">
-            <Ionicons name="add" size={40} color="#FFFFFF" />
+            className="min-h-11 flex-row items-center justify-center gap-1.5 rounded-[20px] bg-orange-500 px-4">
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Text className="text-xs font-black text-white">Create</Text>
           </Pressable>
-          <Text className={`mt-3 text-sm font-bold ${mutedClass}`}>Create a gig</Text>
         </View>
 
         <View className={`mb-5 flex-row rounded-[26px] border p-1 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
-          <ViewButton title="Hustlers" count={applicantMatches.length} active={activeView === 'applicants'} onPress={() => setActiveView('applicants')} />
-          <ViewButton title="Posted" count={openTasks.length} active={activeView === 'posted'} onPress={() => setActiveView('posted')} />
-          <ViewButton title="Archived" count={archivedTasks.length} active={activeView === 'archived'} onPress={() => setActiveView('archived')} />
+          <ViewButton title="Hustlers" count={filteredApplicantMatches.length} active={activeView === 'applicants'} onPress={() => setActiveView('applicants')} />
+          <ViewButton title="Posted" count={filteredOpenTasks.length} active={activeView === 'posted'} onPress={() => setActiveView('posted')} />
+          <ViewButton title="Archived" count={filteredArchivedTasks.length} active={activeView === 'archived'} onPress={() => setActiveView('archived')} />
         </View>
 
         {activeView === 'applicants' && (
           <View>
             <SortControl active={sortMode} onChange={setSortMode} />
 
-            {applicantMatches.length === 0 ? (
-              <EmptyState copy="Counter bids from hustlers land here after they swipe right on your gigs." />
+            {filteredApplicantMatches.length === 0 ? (
+              <EmptyState copy={searchQuery.trim() ? 'No matching hustlers or gigs found.' : 'Counter bids from hustlers land here after they swipe right on your gigs.'} />
             ) : (
-              applicantMatches.map((match) => (
-                <ApplicantCard
-                  key={match.id}
-                  match={match}
-                  newCounterBid={hasUnseenCounterBid(match, profile.id)}
-                  unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
-                  onComplete={() => confirmComplete(match)}
-                  onPick={() => confirmPick(match)}
-                />
-              ))
+              <>
+                {visibleApplicantMatches.map((match) => (
+                  <ApplicantCard
+                    key={match.id}
+                    match={match}
+                    newCounterBid={hasUnseenCounterBid(match, profile.id)}
+                    unreadMessageCount={getUnreadMessageCount(match, messages, profile.id)}
+                    onComplete={() => confirmComplete(match)}
+                    onPick={() => confirmPick(match)}
+                  />
+                ))}
+                {hiddenBidderCount > 0 ? (
+                  <SeeMoreBiddersCard count={hiddenBidderCount} onPress={confirmUnlockBidders} />
+                ) : null}
+              </>
             )}
           </View>
         )}
 
         {activeView === 'posted' && (
           <View>
-            {openTasks.length === 0 ? (
-              <EmptyState copy="Open gigs you create will appear here." />
+            {filteredOpenTasks.length === 0 ? (
+              <EmptyState copy={searchQuery.trim() ? 'No matching posted gigs found.' : 'Open gigs you create will appear here.'} />
             ) : (
-              openTasks.map((task) => <PostedGigCard key={task.id} task={task} onPress={() => setEditingTask(task)} />)
+              filteredOpenTasks.map((task) => <PostedGigCard key={task.id} task={task} onPress={() => setEditingTask(task)} />)
             )}
           </View>
         )}
 
         {activeView === 'archived' && (
           <View>
-            {archivedTasks.length === 0 ? (
-              <EmptyState copy="Finished or archived gigs will appear here." />
+            {filteredArchivedTasks.length === 0 ? (
+              <EmptyState copy={searchQuery.trim() ? 'No matching archived gigs found.' : 'Finished or archived gigs will appear here.'} />
             ) : (
-              archivedTasks.map((task) => <PostedGigCard key={task.id} task={task} archived />)
+              filteredArchivedTasks.map((task) => <PostedGigCard key={task.id} task={task} archived />)
             )}
           </View>
         )}
@@ -207,8 +310,44 @@ export default function ForgeScreen() {
         </View>
       </Modal>
 
-      <BstPurchaseSheet visible={purchaseOpen} onClose={() => setPurchaseOpen(false)} />
+      <BstPurchaseSheet
+        visible={purchaseOpen}
+        reason={purchaseReason}
+        onClose={() => setPurchaseOpen(false)}
+      />
     </SafeAreaView>
+  );
+}
+
+function SearchField({
+  onChangeText,
+  placeholder,
+  value,
+}: {
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  const { isDark } = useGigStore();
+
+  return (
+    <View className={`min-h-11 flex-1 flex-row items-center gap-2 rounded-[20px] border px-3 ${
+      isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'
+    }`}>
+      <Ionicons name="search" size={17} color="#8B5CF6" />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#71717A"
+        className={`min-w-0 flex-1 text-sm font-semibold ${isDark ? 'text-white' : 'text-zinc-950'}`}
+      />
+      {value.trim() ? (
+        <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => onChangeText('')}>
+          <Ionicons name="close-circle" size={17} color="#71717A" />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -216,17 +355,15 @@ function SortControl({ active, onChange }: { active: SortMode; onChange: (mode: 
   const { isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+  const activeOption = sortOptions.find((option) => option.mode === active);
 
   return (
-    <View className={`mb-4 rounded-[26px] border p-4 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
-      <View className="mb-3 flex-row items-center justify-between">
-        <View>
-          <Text className={`text-base font-black ${titleClass}`}>Sort applicants</Text>
-          <Text className={`text-xs font-semibold ${mutedClass}`}>Choose how hustlers are ranked</Text>
-        </View>
-        <Ionicons name="swap-vertical" size={20} color="#8B5CF6" />
+    <View className="mb-3">
+      <View className="mb-2 flex-row items-center justify-between">
+        <Text className={`text-sm font-black ${titleClass}`}>Sort applicants</Text>
+        <Text className={`text-xs font-semibold ${mutedClass}`}>{activeOption?.caption}</Text>
       </View>
-      <View className="flex-row flex-wrap gap-2">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pr-2">
         {sortOptions.map((option) => {
           const selected = active === option.mode;
 
@@ -235,24 +372,21 @@ function SortControl({ active, onChange }: { active: SortMode; onChange: (mode: 
               key={option.mode}
               accessibilityRole="button"
               onPress={() => onChange(option.mode)}
-              className={`min-h-16 flex-1 basis-[47%] rounded-[20px] border p-3 ${
+              className={`min-h-10 flex-row items-center gap-1.5 rounded-full border px-3 ${
                 selected
                   ? 'border-violet bg-violet'
                   : isDark
                     ? 'border-white/10 bg-white/10'
                     : 'border-zinc-200 bg-zinc-100'
               }`}>
-              <View className="mb-1 flex-row items-center gap-2">
-                <Ionicons name={option.icon} size={16} color={selected ? '#FFFFFF' : '#8B5CF6'} />
-                <Text className={`text-sm font-black ${selected || isDark ? 'text-white' : 'text-zinc-950'}`}>
-                  {option.label}
-                </Text>
-              </View>
-              <Text className={`text-xs font-semibold ${selected ? 'text-white/80' : mutedClass}`}>{option.caption}</Text>
+              <Ionicons name={option.icon} size={15} color={selected ? '#FFFFFF' : '#8B5CF6'} />
+              <Text className={`text-xs font-black ${selected || isDark ? 'text-white' : 'text-zinc-950'}`}>
+                {option.label}
+              </Text>
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -371,6 +505,33 @@ function NotificationBadge({ label }: { label: string }) {
   );
 }
 
+function SeeMoreBiddersCard({ count, onPress }: { count: number; onPress: () => void }) {
+  const { isDark } = useGigStore();
+  const titleClass = isDark ? 'text-white' : 'text-zinc-950';
+  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+
+  return (
+    <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-orange-400/30 bg-orange-500/10' : 'border-orange-200 bg-orange-50'}`}>
+      <View className="mb-4 flex-row items-center gap-3">
+        <View className="h-12 w-12 items-center justify-center rounded-full bg-orange-500/20">
+          <Ionicons name="people" size={22} color="#F97316" />
+        </View>
+        <View className="flex-1">
+          <Text className={`text-lg font-black ${titleClass}`}>More bidders waiting</Text>
+          <Text className={`text-sm ${mutedClass}`}>
+            {count} more bidder{count === 1 ? '' : 's'} hidden behind the convenience unlock.
+          </Text>
+        </View>
+      </View>
+      <PrimaryButton
+        label={`See all bidders (${SEE_MORE_BIDDERS_COST_BSTS} ${CURRENCY_NAME})`}
+        icon="lock-open"
+        onPress={onPress}
+      />
+    </View>
+  );
+}
+
 function PostedGigCard({ task, archived = false, onPress }: { task: Task; archived?: boolean; onPress?: () => void }) {
   const { matches, isDark } = useGigStore();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
@@ -415,6 +576,39 @@ function PostedGigCard({ task, archived = false, onPress }: { task: Task; archiv
       {content}
     </Link>
   );
+}
+
+function applicantMatchesQuery(match: EnrichedMatch, query: string) {
+  return matchesSearchQuery(query, [
+    match.doer.username,
+    match.doer.bio,
+    match.doer.skills,
+    match.doer.interests,
+    match.task.title,
+    match.task.description,
+    match.task.location_label,
+    match.task.date_window,
+    getTaskCategoryLabels(match.task),
+    match.bid_note,
+    match.availability_window,
+    match.counter_bid,
+    match.task.budget,
+    match.status,
+  ]);
+}
+
+function taskMatchesQuery(task: Task, query: string) {
+  return matchesSearchQuery(query, [
+    task.title,
+    task.description,
+    task.location_label,
+    task.date_window,
+    getTaskCategoryLabels(task),
+    task.required_skills,
+    task.budget,
+    task.status,
+    task.is_boosted ? 'boosted' : 'not boosted',
+  ]);
 }
 
 function Metric({
