@@ -11,6 +11,7 @@ import { CategorySelector } from '@/components/category-selector';
 import { PrimaryButton } from '@/components/primary-button';
 import type { Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { resolveImageSource } from '@/lib/repo-images';
 import { BOOST_COST_PER_DAY_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const boostDurations = [1, 3, 7];
@@ -288,7 +289,7 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
               <View className="flex-row flex-wrap gap-2">
                 {imageUrls.map((uri) => (
                   <View key={uri} className="relative overflow-hidden rounded-[18px]">
-                    <Image source={{ uri }} style={{ height: 76, width: 76 }} contentFit="cover" />
+                    <Image source={resolveImageSource(uri)} style={{ height: 76, width: 76 }} contentFit="cover" />
                     <Pressable
                       accessibilityLabel="Remove image"
                       accessibilityRole="button"

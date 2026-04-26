@@ -3,6 +3,7 @@ import {
   GoogleAuthProvider,
   RecaptchaVerifier,
   browserPopupRedirectResolver,
+  linkWithPhoneNumber,
   signInWithPhoneNumber,
   signInWithPopup,
 } from 'firebase/auth';
@@ -116,7 +117,9 @@ export async function requestFirebasePhoneVerification(
       await recaptchaVerifier.render();
     }
 
-    pendingConfirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+    pendingConfirmationResult = auth.currentUser
+      ? await linkWithPhoneNumber(auth.currentUser, phoneNumber, recaptchaVerifier)
+      : await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
     return { ok: true, phone: phoneNumber };
   } catch (error) {
     // Only clear on failure so the verifier can be recreated on next attempt.

@@ -50,10 +50,10 @@ export default function RootLayout() {
 }
 
 function ThemedAppShell() {
-  const { isDark, profile } = useGigStore();
+  const { isAccountReady, isDark } = useGigStore();
   const backgroundColor = isDark ? '#000000' : '#F4F4F5';
 
-  if (!profile.is_onboarded) {
+  if (!isAccountReady) {
     return <OnboardingScreen />;
   }
 

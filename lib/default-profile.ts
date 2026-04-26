@@ -1,0 +1,30 @@
+import type { Profile } from './gig-types';
+import { DEFAULT_TASK_RADIUS_MILES, RAPID_CITY_CENTER } from './geo';
+
+export const defaultProfile: Profile = {
+  id: 'local-profile',
+  username: '',
+  avatar_url: null,
+  bio: '',
+  skills: [],
+  interests: [],
+  credits: 0,
+  location: RAPID_CITY_CENTER,
+  search_radius: DEFAULT_TASK_RADIUS_MILES,
+  is_verified: false,
+  is_onboarded: false,
+  google_authenticated: false,
+  phone_number: '',
+  phone_verified: false,
+  birth_date: '',
+  education_level: null,
+  accepted_terms_at: null,
+  signup_bonus_awarded: false,
+  daily_streak: 0,
+  weekly_streak: 0,
+  monthly_streak: 0,
+  last_reward_claimed_at: null,
+  vouch_count: 0,
+  posted_vouch_count: 0,
+  rating: 5,
+};

@@ -8,6 +8,7 @@ import { VerifiedBadge } from '@/components/verified-badge';
 import type { Profile, Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
 import { formatDistance } from '@/lib/gig-utils';
+import { resolveImageSource } from '@/lib/repo-images';
 
 type TaskCardProps = {
   task: Task;
@@ -27,14 +28,15 @@ export function TaskCard({ task, currentUser, poster, revealPoster = false, onPa
   const dividerClass = isDark ? 'border-white/10' : 'border-zinc-200';
   const imageHeight = Math.max(height * 0.4, 260);
   const hasActions = Boolean(onPass || onBid);
+  const taskImageSource = resolveImageSource(task.image_urls[0]);
 
   return (
     <View className={`h-full overflow-hidden rounded-[30px] border ${panelClass}`}>
       <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerClassName="pb-5">
         <View className={isDark ? 'bg-zinc-900' : 'bg-zinc-200'} style={{ height: imageHeight }}>
-          {task.image_urls[0] ? (
+          {taskImageSource ? (
             <Image
-              source={{ uri: task.image_urls[0] }}
+              source={taskImageSource}
               contentFit="cover"
               style={{ height: '100%', width: '100%' }}
             />
@@ -177,11 +179,13 @@ function DetailRow({ icon, label, value, isDark }: DetailRowProps) {
 }
 
 function HiddenPosterAvatar({ poster }: { poster: Profile }) {
+  const avatarSource = resolveImageSource(poster.avatar_url);
+
   return (
     <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-violet/25">
-      {poster.avatar_url ? (
+      {avatarSource ? (
         <>
-          <Image source={{ uri: poster.avatar_url }} style={{ height: 48, width: 48 }} contentFit="cover" />
+          <Image source={avatarSource} style={{ height: 48, width: 48 }} contentFit="cover" />
           <BlurView intensity={28} tint="dark" className="absolute inset-0" />
         </>
       ) : (

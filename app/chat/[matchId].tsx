@@ -13,6 +13,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { resolveImageSource } from '@/lib/repo-images';
 import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const GOOGLE_MAPS_URL_PATTERN = /(https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=[^\s]+)/;
@@ -156,11 +157,13 @@ export default function ChatScreen() {
 }
 
 function HiddenAvatar({ profile }: { profile: Profile }) {
+  const avatarSource = resolveImageSource(profile.avatar_url);
+
   return (
     <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-violet/25">
-      {profile.avatar_url ? (
+      {avatarSource ? (
         <>
-          <Image source={{ uri: profile.avatar_url }} style={{ height: 48, width: 48 }} contentFit="cover" />
+          <Image source={avatarSource} style={{ height: 48, width: 48 }} contentFit="cover" />
           <BlurView intensity={30} tint="dark" className="absolute inset-0" />
         </>
       ) : (

@@ -8,15 +8,15 @@ import {
   collection,
   doc,
   getDoc,
-  getDocs,
   increment,
   onSnapshot,
-  orderBy,
   query,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 
+import { defaultProfile } from './default-profile';
 import {
   CHAT_UNLOCK_COST_BSTS,
   DAILY_REWARD_BSTS,
@@ -24,13 +24,6 @@ import {
   SIGNUP_BONUS_BSTS,
   WEEKLY_STREAK_BONUS_BSTS,
 } from './sidehustle-config';
-import {
-  currentUser as seededCurrentUser,
-  matches as seededMatches,
-  messages as seededMessages,
-  profiles as seededProfiles,
-  tasks as seededTasks,
-} from './mock-data';
 import { firebaseAuth, firebaseDb, hasFirebaseConfig } from './firebase';
 import {
   confirmFirebasePhoneCode,
@@ -40,6 +33,7 @@ import {
 } from './auth-utils';
 import type { Coordinates, EnrichedMatch, GigMatch, Message, Profile, Task } from './gig-types';
 import { buildDeck, createUuid, enrichMatches } from './gig-utils';
+import { toPublicAvatarRef, toShareableImageRefs } from './repo-images';
 
 type CreateTaskInput = {
   title: string;
@@ -116,6 +110,7 @@ type GigStoreValue = {
   matches: EnrichedMatch[];
   messages: Message[];
   isLiveMode: boolean;
+  isAccountReady: boolean;
   authLoading: boolean;
   authUserEmail: string | null;
   authUserName: string | null;
@@ -186,6 +181,10 @@ function getString(value: unknown) {
   return typeof value === 'string' ? value : '';
 }
 
+function getStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 function getNumber(value: unknown, fallback: number) {
   const nextValue = Number(value);
   return Number.isFinite(nextValue) ? nextValue : fallback;
@@ -211,20 +210,25 @@ function toIsoString(value: unknown, fallback = new Date().toISOString()) {
   return fallback;
 }
 
-function buildProfileFromAuthUser(user: User, current: Profile, row?: Record<string, unknown> | null): Profile {
+function getCoordinates(value: unknown, fallback: Coordinates): Coordinates {
+  const rowLocation = value as Record<string, unknown> | undefined;
+  const latitude = getNumber(rowLocation?.latitude, Number.NaN);
+  const longitude = getNumber(rowLocation?.longitude, Number.NaN);
+
+  return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : fallback;
+}
+
+function buildProfileFromRow(id: string, row?: Record<string, unknown> | null, current = defaultProfile): Profile {
   const rowLocation = row?.location as Record<string, unknown> | undefined;
-  const authPhone = user.phoneNumber ?? '';
-  const profilePhone = getString(row?.phone_number) || authPhone;
-  const phoneVerified = Boolean(row?.phone_verified) || Boolean(user.phoneNumber && profilePhone);
 
   return {
     ...current,
-    id: user.uid,
-    username: getString(row?.username),
-    avatar_url: getString(row?.avatar_url) || null,
-    bio: getString(row?.bio),
-    skills: Array.isArray(row?.skills) ? (row?.skills as string[]) : [],
-    interests: Array.isArray(row?.interests) ? (row?.interests as string[]) : [],
+    id,
+    username: getString(row?.username) || current.username,
+    avatar_url: getString(row?.avatar_url) || current.avatar_url,
+    bio: getString(row?.bio) || current.bio,
+    skills: getStringArray(row?.skills).length > 0 ? getStringArray(row?.skills) : current.skills,
+    interests: getStringArray(row?.interests).length > 0 ? getStringArray(row?.interests) : current.interests,
     credits: getNumber(row?.credits, current.credits),
     location:
       typeof rowLocation?.latitude === 'number' && typeof rowLocation?.longitude === 'number'
@@ -234,15 +238,15 @@ function buildProfileFromAuthUser(user: User, current: Profile, row?: Record<str
           }
         : current.location,
     search_radius: getNumber(row?.search_radius, current.search_radius),
-    is_verified: Boolean(row?.is_verified),
-    is_onboarded: Boolean(row?.is_onboarded),
-    google_authenticated: hasGoogleIdentity(user) || Boolean(row?.google_authenticated) || current.google_authenticated,
-    phone_number: profilePhone,
-    phone_verified: phoneVerified,
-    birth_date: getString(row?.birth_date),
-    education_level: getString(row?.education_level) || null,
-    accepted_terms_at: getString(row?.accepted_terms_at) || null,
-    signup_bonus_awarded: Boolean(row?.signup_bonus_awarded),
+    is_verified: Boolean(row?.is_verified) || current.is_verified,
+    is_onboarded: Boolean(row?.is_onboarded) || current.is_onboarded,
+    google_authenticated: Boolean(row?.google_authenticated) || current.google_authenticated,
+    phone_number: getString(row?.phone_number) || current.phone_number,
+    phone_verified: Boolean(row?.phone_verified) || current.phone_verified,
+    birth_date: getString(row?.birth_date) || current.birth_date,
+    education_level: getString(row?.education_level) || current.education_level,
+    accepted_terms_at: getString(row?.accepted_terms_at) || current.accepted_terms_at,
+    signup_bonus_awarded: Boolean(row?.signup_bonus_awarded) || current.signup_bonus_awarded,
     daily_streak: getNumber(row?.daily_streak, current.daily_streak),
     weekly_streak: getNumber(row?.weekly_streak, current.weekly_streak),
     monthly_streak: getNumber(row?.monthly_streak, current.monthly_streak),
@@ -253,13 +257,114 @@ function buildProfileFromAuthUser(user: User, current: Profile, row?: Record<str
   };
 }
 
+function buildProfileFromAuthUser(user: User, current: Profile, row?: Record<string, unknown> | null): Profile {
+  const profileFromRow = buildProfileFromRow(user.uid, row, current);
+  const authPhone = user.phoneNumber ?? '';
+  const profilePhone = profileFromRow.phone_number || authPhone;
+
+  return {
+    ...profileFromRow,
+    google_authenticated: hasGoogleIdentity(user) || profileFromRow.google_authenticated,
+    phone_number: profilePhone,
+    phone_verified: profileFromRow.phone_verified || Boolean(user.phoneNumber && profilePhone),
+  };
+}
+
+function isProfileAppReady(profile: Profile) {
+  return Boolean(
+    profile.google_authenticated &&
+      profile.phone_verified &&
+      profile.is_onboarded &&
+      profile.username.trim() &&
+      profile.avatar_url &&
+      profile.bio.trim() &&
+      profile.birth_date &&
+      profile.education_level &&
+      profile.accepted_terms_at &&
+      profile.interests.length >= 5,
+  );
+}
+
+function buildPrivateProfileRecord(profile: Profile) {
+  return {
+    username: profile.username,
+    avatar_url: profile.avatar_url,
+    bio: profile.bio,
+    skills: profile.skills,
+    interests: profile.interests,
+    credits: profile.credits,
+    location: profile.location,
+    search_radius: profile.search_radius,
+    is_verified: profile.is_verified,
+    is_onboarded: profile.is_onboarded,
+    google_authenticated: profile.google_authenticated,
+    phone_number: profile.phone_number,
+    phone_verified: profile.phone_verified,
+    birth_date: profile.birth_date,
+    education_level: profile.education_level,
+    accepted_terms_at: profile.accepted_terms_at,
+    signup_bonus_awarded: profile.signup_bonus_awarded,
+    daily_streak: profile.daily_streak,
+    weekly_streak: profile.weekly_streak,
+    monthly_streak: profile.monthly_streak,
+    last_reward_claimed_at: profile.last_reward_claimed_at,
+    vouch_count: profile.vouch_count,
+    posted_vouch_count: profile.posted_vouch_count,
+    rating: profile.rating,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function buildPublicProfileRecord(profile: Profile) {
+  return {
+    username: profile.username,
+    avatar_url: toPublicAvatarRef(profile.avatar_url),
+    bio: profile.bio,
+    skills: profile.skills,
+    interests: profile.interests,
+    location: profile.location,
+    search_radius: profile.search_radius,
+    is_verified: profile.is_verified,
+    is_onboarded: profile.is_onboarded,
+    google_authenticated: profile.google_authenticated,
+    phone_verified: profile.phone_verified,
+    vouch_count: profile.vouch_count,
+    posted_vouch_count: profile.posted_vouch_count,
+    rating: profile.rating,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function buildMatchRecord(match: GigMatch, task: Task | undefined) {
+  const posterId = task?.poster_id ?? '';
+  const participantIds = Array.from(new Set([posterId, match.doer_id].filter(Boolean)));
+
+  return {
+    ...match,
+    poster_id: posterId,
+    participant_ids: participantIds,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function buildMessageRecord(message: Message, match: GigMatch | undefined, task: Task | undefined) {
+  const posterId = task?.poster_id ?? '';
+  const participantIds = Array.from(new Set([posterId, match?.doer_id, message.sender_id].filter(Boolean)));
+
+  return {
+    ...message,
+    task_id: match?.task_id ?? '',
+    participant_ids: participantIds,
+  };
+}
+
 export function GigProvider({ children }: PropsWithChildren) {
   const systemScheme = useColorScheme();
-  const [profile, setProfile] = useState<Profile>(seededCurrentUser);
-  const [profiles, setProfiles] = useState<Profile[]>(seededProfiles);
-  const [tasks, setTasks] = useState<Task[]>(seededTasks);
-  const [matches, setMatches] = useState<GigMatch[]>(seededMatches);
-  const [messages, setMessages] = useState<Message[]>(seededMessages);
+  const [profile, setProfile] = useState<Profile>(defaultProfile);
+  const [profiles, setProfiles] = useState<Profile[]>([defaultProfile]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [matches, setMatches] = useState<GigMatch[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [celebratedMatchId, setCelebratedMatchId] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<'light' | 'dark'>(systemScheme === 'light' ? 'light' : 'dark');
   const [authLoading, setAuthLoading] = useState(hasFirebaseConfig);
@@ -278,6 +383,20 @@ export function GigProvider({ children }: PropsWithChildren) {
     },
     [],
   );
+
+  const persistProfile = useCallback(async (nextProfile: Profile) => {
+    if (!firebaseDb || !nextProfile.google_authenticated) {
+      return;
+    }
+
+    await setDoc(doc(firebaseDb, 'profiles', nextProfile.id), buildPrivateProfileRecord(nextProfile), { merge: true });
+
+    if (nextProfile.is_onboarded && nextProfile.username.trim()) {
+      await setDoc(doc(firebaseDb, 'public_profiles', nextProfile.id), buildPublicProfileRecord(nextProfile), {
+        merge: true,
+      });
+    }
+  }, []);
 
   const applyAuthUser = useCallback(async (user: User) => {
     const displayName = getAuthDisplayName(user);
@@ -304,9 +423,11 @@ export function GigProvider({ children }: PropsWithChildren) {
           : [nextProfile, ...currentProfiles],
       );
 
+      void persistProfile(nextProfile);
+
       return nextProfile;
     });
-  }, []);
+  }, [persistProfile]);
 
   const requestCurrentLocation = useCallback(async () => {
     if (!hasFirebaseConfig) {
@@ -330,16 +451,17 @@ export function GigProvider({ children }: PropsWithChildren) {
       setProfiles((current) =>
         current.map((item) => (item.id === profile.id ? { ...item, location: coords } : item)),
       );
-    } catch {
-      // Seeded Rapid City coordinates keep the demo useful if location is unavailable.
-    }
-  }, [profile.id]);
 
-  const mergeTasks = useCallback((existing: Task[], incoming: Task[]) => {
-    const byId = new Map(existing.map((task) => [task.id, task]));
-    incoming.forEach((task) => byId.set(task.id, task));
-    return Array.from(byId.values());
-  }, []);
+      if (firebaseDb && profile.google_authenticated) {
+        await setDoc(doc(firebaseDb, 'profiles', profile.id), { location: coords }, { merge: true });
+        if (profile.is_onboarded) {
+          await setDoc(doc(firebaseDb, 'public_profiles', profile.id), { location: coords }, { merge: true });
+        }
+      }
+    } catch {
+      // Rapid City defaults keep distance filters usable if location is unavailable.
+    }
+  }, [profile.google_authenticated, profile.id, profile.is_onboarded]);
 
   const mergeMatches = useCallback((existing: GigMatch[], incoming: GigMatch[]) => {
     const byId = new Map(existing.map((match) => [match.id, match]));
@@ -360,89 +482,67 @@ export function GigProvider({ children }: PropsWithChildren) {
   }, []);
 
   const mapFirebaseTask = useCallback(
-    (row: Record<string, unknown>): Task => ({
-      id: String(row.id),
-      poster_id: String(row.poster_id),
-      title: String(row.title),
-      description: String(row.description),
-      budget: Number(row.budget),
-      category: String(row.category),
-      location_label: String(row.location_label ?? 'Rapid City area'),
-      location: {
-        latitude: Number(row.latitude ?? profile.location.latitude),
-        longitude: Number(row.longitude ?? profile.location.longitude),
-      },
-      required_skills: Array.isArray(row.required_skills) ? (row.required_skills as string[]) : [],
-      image_urls: Array.isArray(row.image_urls) ? (row.image_urls as string[]) : [],
-      is_boosted: Boolean(row.is_boosted),
-      boost_days: Number(row.boost_days ?? 0),
-      boost_cost_bsts: Number(row.boost_cost_bsts ?? 0),
-      date_window: String(row.date_window ?? ''),
-      status: row.status === 'archived' ? 'archived' : 'open',
-      created_at: toIsoString(row.created_at),
-    }),
+    (row: Record<string, unknown>): Task => {
+      const legacyLocation = {
+        latitude: getNumber(row.latitude, profile.location.latitude),
+        longitude: getNumber(row.longitude, profile.location.longitude),
+      };
+
+      return {
+        id: String(row.id),
+        poster_id: getString(row.poster_id),
+        title: getString(row.title),
+        description: getString(row.description),
+        budget: getNumber(row.budget, 0),
+        category: getString(row.category),
+        location_label: getString(row.location_label) || 'Rapid City area',
+        location: getCoordinates(row.location, legacyLocation),
+        required_skills: getStringArray(row.required_skills),
+        image_urls: getStringArray(row.image_urls),
+        is_boosted: Boolean(row.is_boosted),
+        boost_days: getNumber(row.boost_days, 0),
+        boost_cost_bsts: getNumber(row.boost_cost_bsts, 0),
+        date_window: getString(row.date_window),
+        status: row.status === 'archived' ? 'archived' : 'open',
+        created_at: toIsoString(row.created_at),
+      };
+    },
     [profile.location.latitude, profile.location.longitude],
   );
 
   const mapFirebaseMatch = useCallback(
-    (row: Record<string, unknown>): GigMatch => ({
-      id: String(row.id),
-      task_id: String(row.task_id),
-      doer_id: String(row.doer_id),
-      bid_note: String(row.bid_note ?? ''),
-      counter_bid: Number(row.counter_bid ?? 0),
-      availability_window: String(row.availability_window ?? ''),
-      is_unlocked: Boolean(row.is_unlocked),
-      status: (row.status as GigMatch['status']) ?? 'pending',
-      created_at: toIsoString(row.created_at),
-    }),
+    (row: Record<string, unknown>): GigMatch => {
+      const status = row.status === 'matched' || row.status === 'completed' ? row.status : 'pending';
+
+      return {
+        id: String(row.id),
+        task_id: getString(row.task_id),
+        doer_id: getString(row.doer_id),
+        bid_note: getString(row.bid_note),
+        counter_bid: getNumber(row.counter_bid, 0),
+        availability_window: getString(row.availability_window),
+        is_unlocked: Boolean(row.is_unlocked),
+        status,
+        created_at: toIsoString(row.created_at),
+      };
+    },
     [],
   );
 
   const mapFirebaseMessage = useCallback(
     (row: Record<string, unknown>): Message => ({
       id: String(row.id),
-      match_id: String(row.match_id),
-      sender_id: String(row.sender_id),
-      content: String(row.content ?? ''),
+      match_id: getString(row.match_id),
+      sender_id: getString(row.sender_id),
+      content: getString(row.content),
       created_at: toIsoString(row.created_at),
     }),
     [],
   );
 
-  const hydrateMessages = useCallback(async () => {
-    if (!firebaseDb) {
-      return;
-    }
-
-    try {
-      const snapshot = await getDocs(query(collection(firebaseDb, 'messages'), orderBy('created_at', 'asc')));
-      setMessages(snapshot.docs.map((item) => mapFirebaseMessage({ id: item.id, ...item.data() })));
-    } catch {
-      // Keep current local messages on transient network errors.
-    }
-  }, [mapFirebaseMessage]);
-
-  const hydrateFromFirebase = useCallback(
-    async (nextProfile: Profile) => {
-      if (!firebaseDb) {
-        return;
-      }
-
-      try {
-        const taskSnapshot = await getDocs(collection(firebaseDb, 'tasks'));
-        const liveTasks = taskSnapshot.docs.map((item) => mapFirebaseTask({ id: item.id, ...item.data() }));
-
-        if (liveTasks.length > 0) {
-          setTasks((existing) => mergeTasks(existing, liveTasks));
-        }
-      } catch {
-        // Mock data remains the first-run fallback for hackathon demos.
-      }
-
-      await hydrateMessages();
-    },
-    [hydrateMessages, mapFirebaseTask, mergeTasks],
+  const mapFirebaseProfile = useCallback(
+    (id: string, row: Record<string, unknown>): Profile => buildProfileFromRow(id, row),
+    [],
   );
 
   useEffect(() => {
@@ -486,39 +586,70 @@ export function GigProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const database = firebaseDb;
 
-    if (!hasFirebaseConfig || !database) {
+    if (!hasFirebaseConfig || !database || !profile.google_authenticated) {
       return;
     }
 
-    const unsubscribeMatches = onSnapshot(collection(database, 'matches'), (snapshot) => {
-      const incoming = snapshot.docs.map((item) => mapFirebaseMatch({ id: item.id, ...item.data() }));
-      setMatches((current) => mergeMatches(current, incoming));
+    const unsubscribeProfiles = onSnapshot(collection(database, 'public_profiles'), (snapshot) => {
+      const publicProfiles = snapshot.docs
+        .map((item) => mapFirebaseProfile(item.id, item.data() as Record<string, unknown>))
+        .filter((item) => item.id !== profile.id && item.username.trim());
 
-      incoming.forEach((nextMatch) => {
-        if (nextMatch.status === 'matched' && nextMatch.doer_id === profile.id) {
-          setCelebratedMatchId(nextMatch.id);
-        }
+      setProfiles((current) => {
+        const currentProfile = current.find((item) => item.id === profile.id) ?? profile;
+        return [currentProfile, ...publicProfiles];
       });
     });
 
-    const unsubscribeMessages = onSnapshot(
-      query(collection(database, 'messages'), orderBy('created_at', 'asc')),
+    const unsubscribeTasks = onSnapshot(collection(database, 'tasks'), (snapshot) => {
+      const liveTasks = snapshot.docs
+        .map((item) => mapFirebaseTask({ id: item.id, ...item.data() }))
+        .filter((task) => task.poster_id && task.title.trim());
+
+      setTasks(liveTasks.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    });
+
+    const unsubscribeMatches = onSnapshot(
+      query(collection(database, 'matches'), where('participant_ids', 'array-contains', profile.id)),
       (snapshot) => {
-        const incoming = snapshot.docs.map((item) => mapFirebaseMessage({ id: item.id, ...item.data() }));
-        setMessages((current) => mergeMessages(current, incoming));
+        const incoming = snapshot.docs.map((item) => mapFirebaseMatch({ id: item.id, ...item.data() }));
+        setMatches(mergeMatches([], incoming));
+
+        incoming.forEach((nextMatch) => {
+          if (nextMatch.status === 'matched' && nextMatch.doer_id === profile.id) {
+            setCelebratedMatchId(nextMatch.id);
+          }
+        });
       },
     );
 
-    void hydrateFromFirebase(profile);
+    const unsubscribeMessages = onSnapshot(
+      query(collection(database, 'messages'), where('participant_ids', 'array-contains', profile.id)),
+      (snapshot) => {
+        const incoming = snapshot.docs.map((item) => mapFirebaseMessage({ id: item.id, ...item.data() }));
+        setMessages(mergeMessages([], incoming));
+      },
+    );
 
     return () => {
+      unsubscribeProfiles();
+      unsubscribeTasks();
       unsubscribeMatches();
       unsubscribeMessages();
     };
-  }, [hydrateFromFirebase, mapFirebaseMatch, mapFirebaseMessage, mergeMatches, mergeMessages, profile]);
+  }, [
+    mapFirebaseMatch,
+    mapFirebaseMessage,
+    mapFirebaseProfile,
+    mapFirebaseTask,
+    mergeMatches,
+    mergeMessages,
+    profile,
+  ]);
 
   const deck = useMemo(() => buildDeck(tasks, profile), [profile, tasks]);
   const enrichedMatches = useMemo(() => enrichMatches(matches, tasks, profiles), [matches, profiles, tasks]);
+  const isAccountReady = useMemo(() => isProfileAppReady(profile), [profile]);
 
   async function createTask(input: CreateTaskInput) {
     if (input.boost_cost_bsts > profile.credits) {
@@ -552,14 +683,14 @@ export function GigProvider({ children }: PropsWithChildren) {
     }
 
     if (firebaseDb) {
-      await setDoc(doc(firebaseDb, 'tasks', task.id), task);
+      await setDoc(doc(firebaseDb, 'tasks', task.id), {
+        ...task,
+        image_urls: toShareableImageRefs(task.image_urls),
+        updated_at: new Date().toISOString(),
+      });
 
       if (input.boost_cost_bsts > 0) {
-        await setDoc(
-          doc(firebaseDb, 'profiles', profile.id),
-          { credits: profile.credits - input.boost_cost_bsts },
-          { merge: true },
-        );
+        await persistProfile({ ...profile, credits: profile.credits - input.boost_cost_bsts });
       }
     }
 
@@ -602,14 +733,18 @@ export function GigProvider({ children }: PropsWithChildren) {
     }
 
     if (firebaseDb) {
-      await setDoc(doc(firebaseDb, 'tasks', taskId), nextTask, { merge: true });
+      await setDoc(
+        doc(firebaseDb, 'tasks', taskId),
+        {
+          ...nextTask,
+          image_urls: toShareableImageRefs(nextTask.image_urls),
+          updated_at: new Date().toISOString(),
+        },
+        { merge: true },
+      );
 
       if (boostDelta > 0) {
-        await setDoc(
-          doc(firebaseDb, 'profiles', profile.id),
-          { credits: profile.credits - boostDelta },
-          { merge: true },
-        );
+        await persistProfile({ ...profile, credits: profile.credits - boostDelta });
       }
     }
 
@@ -632,7 +767,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     setMatches((current) => [match, ...current]);
 
     if (firebaseDb) {
-      await setDoc(doc(firebaseDb, 'matches', match.id), match);
+      await setDoc(doc(firebaseDb, 'matches', match.id), buildMatchRecord(match, task));
     }
 
     return match;
@@ -655,7 +790,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     setCelebratedMatchId(match.id);
 
     if (firebaseDb) {
-      await setDoc(doc(firebaseDb, 'matches', match.id), match);
+      await setDoc(doc(firebaseDb, 'matches', match.id), buildMatchRecord(match, task));
     }
 
     return match;
@@ -725,14 +860,10 @@ export function GigProvider({ children }: PropsWithChildren) {
         is_unlocked: true,
         updated_at: new Date().toISOString(),
       });
-      await setDoc(
-        doc(firebaseDb, 'profiles', profile.id),
-        { credits: profile.credits - CHAT_UNLOCK_COST_BSTS },
-        { merge: true },
-      );
+      await persistProfile({ ...profile, credits: profile.credits - CHAT_UNLOCK_COST_BSTS });
 
       if (locationMessage) {
-        await setDoc(doc(firebaseDb, 'messages', locationMessage.id), locationMessage);
+        await setDoc(doc(firebaseDb, 'messages', locationMessage.id), buildMessageRecord(locationMessage, match, task));
       }
     }
 
@@ -796,10 +927,20 @@ export function GigProvider({ children }: PropsWithChildren) {
           { posted_vouch_count: increment(1) },
           { merge: true },
         );
+        await setDoc(
+          doc(firebaseDb, 'public_profiles', task.poster_id),
+          { posted_vouch_count: increment(1), updated_at: new Date().toISOString() },
+          { merge: true },
+        );
       }
 
       if (match) {
         await setDoc(doc(firebaseDb, 'profiles', match.doer_id), { vouch_count: increment(1) }, { merge: true });
+        await setDoc(
+          doc(firebaseDb, 'public_profiles', match.doer_id),
+          { vouch_count: increment(1), updated_at: new Date().toISOString() },
+          { merge: true },
+        );
       }
     }
   }
@@ -822,7 +963,9 @@ export function GigProvider({ children }: PropsWithChildren) {
     setMessages((current) => [...current, message]);
 
     if (firebaseDb) {
-      await setDoc(doc(firebaseDb, 'messages', message.id), message);
+      const match = matches.find((item) => item.id === matchId);
+      const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
+      await setDoc(doc(firebaseDb, 'messages', message.id), buildMessageRecord(message, match, task));
     }
   }
 
@@ -836,11 +979,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     syncProfile(nextProfile);
 
     if (firebaseDb) {
-      await setDoc(
-        doc(firebaseDb, 'profiles', profile.id),
-        { avatar_url: avatarUri, is_verified: true },
-        { merge: true },
-      );
+      await persistProfile(nextProfile);
     }
   }
 
@@ -867,21 +1006,14 @@ export function GigProvider({ children }: PropsWithChildren) {
   }
 
   function startPhoneOnlyAuth(): StoreActionResult {
-    if (!hasFirebaseConfig) {
-      return { ok: false, message: 'Add Firebase environment variables before verifying your phone.' };
-    }
-
-    setAuthUserEmail(null);
-    setAuthUserName('Phone verification');
-    syncProfile({
-      ...profile,
-      google_authenticated: true,
-    });
-
-    return { ok: true };
+    return { ok: false, message: 'Create or log in with Google before verifying your phone.' };
   }
 
   async function requestPhoneVerification(phoneNumber: string): Promise<PhoneActionResult> {
+    if (!firebaseAuth?.currentUser || !profile.google_authenticated) {
+      return { ok: false, message: 'Sign in with Google before verifying your phone.' };
+    }
+
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
     if (!normalizedPhone) {
@@ -921,36 +1053,11 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     syncProfile(nextProfile);
 
-    if (user) {
-      await applyAuthUser(user);
-    }
-
     if (firebaseDb) {
       try {
-        await setDoc(
-          doc(firebaseDb, 'profiles', user?.uid ?? profile.id),
-          {
-            username: profile.username,
-            avatar_url: profile.avatar_url,
-            bio: profile.bio,
-            skills: profile.skills,
-            interests: profile.interests,
-            credits: profile.credits,
-            search_radius: profile.search_radius,
-            is_verified: profile.is_verified,
-            is_onboarded: profile.is_onboarded,
-            google_authenticated: true,
-            phone_number: verifiedPhone,
-            phone_verified: true,
-            birth_date: profile.birth_date || null,
-            education_level: profile.education_level,
-            accepted_terms_at: profile.accepted_terms_at,
-            signup_bonus_awarded: profile.signup_bonus_awarded,
-          },
-          { merge: true },
-        );
+        await persistProfile(nextProfile);
       } catch {
-        // Demo phone verification should still work if Firestore rules require auth.
+        // Phone linking should still finish locally if Firestore is temporarily unavailable.
       }
     }
 
@@ -958,6 +1065,22 @@ export function GigProvider({ children }: PropsWithChildren) {
   }
 
   async function completeOnboarding(input: OnboardingInput) {
+    if (!profile.google_authenticated || !profile.phone_verified) {
+      throw new Error('Google sign-in and phone verification are required before onboarding can finish.');
+    }
+
+    if (
+      !input.username.trim() ||
+      !input.phoneNumber.trim() ||
+      !input.birthDate ||
+      !input.bio.trim() ||
+      !input.educationLevel ||
+      !input.avatarUrl ||
+      input.interests.length < 5
+    ) {
+      throw new Error('Account details are incomplete.');
+    }
+
     const shouldAwardSignup = !profile.signup_bonus_awarded;
     const now = new Date().toISOString();
     const nextProfile: Profile = {
@@ -982,16 +1105,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     syncProfile(nextProfile);
 
     if (firebaseDb) {
-      await setDoc(
-        doc(firebaseDb, 'profiles', nextProfile.id),
-        {
-          ...nextProfile,
-          is_onboarded: true,
-          google_authenticated: true,
-          phone_verified: true,
-        },
-        { merge: true },
-      );
+      await persistProfile(nextProfile);
     }
   }
 
@@ -1005,12 +1119,14 @@ export function GigProvider({ children }: PropsWithChildren) {
     syncProfile(nextProfile);
 
     if (firebaseDb) {
-      await setDoc(doc(firebaseDb, 'profiles', profile.id), input, { merge: true });
+      await persistProfile(nextProfile);
     }
   }
 
   function buyBsts(amount: number) {
-    syncProfile({ ...profile, credits: profile.credits + amount });
+    const nextProfile = { ...profile, credits: profile.credits + amount };
+    syncProfile(nextProfile);
+    void persistProfile(nextProfile);
   }
 
   function claimConsistencyReward() {
@@ -1028,14 +1144,17 @@ export function GigProvider({ children }: PropsWithChildren) {
       (weeklyBonus ? WEEKLY_STREAK_BONUS_BSTS : 0) +
       (monthlyBonus ? MONTHLY_STREAK_BONUS_BSTS : 0);
 
-    syncProfile({
+    const nextProfile = {
       ...profile,
       credits: profile.credits + amount,
       daily_streak: nextDailyStreak,
       weekly_streak: weeklyBonus ? profile.weekly_streak + 1 : profile.weekly_streak,
       monthly_streak: monthlyBonus ? profile.monthly_streak + 1 : profile.monthly_streak,
       last_reward_claimed_at: new Date().toISOString(),
-    });
+    };
+
+    syncProfile(nextProfile);
+    void persistProfile(nextProfile);
 
     return {
       amount,
@@ -1049,16 +1168,19 @@ export function GigProvider({ children }: PropsWithChildren) {
     const nextRadius = Math.min(100, Math.max(1, Math.round(radius)));
     const nextProfile = { ...profile, search_radius: nextRadius };
     syncProfile(nextProfile);
+    void persistProfile(nextProfile);
   }
 
   function updateInterests(interests: string[]) {
     const nextProfile = { ...profile, interests, skills: interests };
     syncProfile(nextProfile);
+    void persistProfile(nextProfile);
   }
 
   function updateLocation(coords: Coordinates) {
     const nextProfile = { ...profile, location: coords };
     syncProfile(nextProfile);
+    void persistProfile(nextProfile);
   }
 
   function toggleColorMode() {
@@ -1072,8 +1194,12 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     setAuthUserEmail(null);
     setAuthUserName(null);
+    setProfiles([defaultProfile]);
+    setTasks([]);
+    setMatches([]);
+    setMessages([]);
     syncProfile({
-      ...seededCurrentUser,
+      ...defaultProfile,
       location: profile.location,
       search_radius: profile.search_radius,
     });
@@ -1087,6 +1213,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     matches: enrichedMatches,
     messages,
     isLiveMode: hasFirebaseConfig,
+    isAccountReady,
     authLoading,
     authUserEmail,
     authUserName,

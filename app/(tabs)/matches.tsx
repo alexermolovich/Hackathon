@@ -16,6 +16,7 @@ import { ProfileTrigger } from '@/components/profile-trigger';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import { resolveImageSource } from '@/lib/repo-images';
 import { gigHref } from '@/lib/routes';
 import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
@@ -138,6 +139,7 @@ function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onU
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
   const reveal = match.is_unlocked;
+  const taskImageSource = resolveImageSource(match.task.image_urls[0]);
 
   return (
     <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
@@ -155,8 +157,8 @@ function HustleCard({ match, onUnlock, onComplete }: { match: EnrichedMatch; onU
         <Ionicons name={reveal ? 'chatbubble-ellipses' : 'lock-closed'} size={22} color="#A78BFA" />
       </View>
 
-      {match.task.image_urls[0] && (
-        <Image source={{ uri: match.task.image_urls[0] }} style={{ borderRadius: 22, height: 128, marginBottom: 16, width: '100%' }} contentFit="cover" />
+      {taskImageSource && (
+        <Image source={taskImageSource} style={{ borderRadius: 22, height: 128, marginBottom: 16, width: '100%' }} contentFit="cover" />
       )}
 
       <View className="mb-4 flex-row flex-wrap gap-2">
@@ -216,11 +218,13 @@ function PendingBid({ match }: { match: EnrichedMatch }) {
 }
 
 function HiddenAvatar({ poster }: { poster: Profile }) {
+  const avatarSource = resolveImageSource(poster.avatar_url);
+
   return (
     <View className="h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-violet/25">
-      {poster.avatar_url ? (
+      {avatarSource ? (
         <>
-          <Image source={{ uri: poster.avatar_url }} style={{ height: 56, width: 56 }} contentFit="cover" />
+          <Image source={avatarSource} style={{ height: 56, width: 56 }} contentFit="cover" />
           <BlurView intensity={30} tint="dark" className="absolute inset-0" />
         </>
       ) : (

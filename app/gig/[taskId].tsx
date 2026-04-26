@@ -9,6 +9,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
 import { formatDistance } from '@/lib/gig-utils';
+import { resolveImageSource } from '@/lib/repo-images';
 
 export default function GigDetailScreen() {
   const { taskId } = useLocalSearchParams<{ taskId?: string | string[] }>();
@@ -26,6 +27,7 @@ export default function GigDetailScreen() {
   const shellClass = isDark ? 'bg-black' : 'bg-zinc-100';
   const panelClass = isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white';
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
+  const taskImageSource = resolveImageSource(task?.image_urls[0]);
 
   function closePage() {
     if (router.canGoBack()) {
@@ -73,8 +75,8 @@ export default function GigDetailScreen() {
         </View>
 
         <View className={`mb-5 overflow-hidden rounded-[32px] border ${panelClass}`}>
-          {task.image_urls[0] ? (
-            <Image source={{ uri: task.image_urls[0] }} style={{ height: 220, width: '100%' }} contentFit="cover" />
+          {taskImageSource ? (
+            <Image source={taskImageSource} style={{ height: 220, width: '100%' }} contentFit="cover" />
           ) : (
             <View className="h-48 items-center justify-center bg-violet/20">
               <Ionicons name="briefcase" size={42} color="#C4B5FD" />

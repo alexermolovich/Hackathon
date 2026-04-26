@@ -1,0 +1,47 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function owns(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function participantIn(resourceData) {
+      return signedIn() && request.auth.uid in resourceData.participant_ids;
+    }
+
+    match /profiles/{userId} {
+      allow read, create, update, delete: if owns(userId);
+    }
+
+    match /public_profiles/{userId} {
+      allow read: if true;
+      allow create, update, delete: if owns(userId);
+    }
+
+    match /tasks/{taskId} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.poster_id == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.poster_id == request.auth.uid;
+    }
+
+    match /matches/{matchId} {
+      allow read: if participantIn(resource.data);
+      allow create: if participantIn(request.resource.data)
+        && request.resource.data.doer_id == request.auth.uid;
+      allow update: if participantIn(resource.data) && participantIn(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /messages/{messageId} {
+      allow read: if participantIn(resource.data);
+      allow create: if participantIn(request.resource.data)
+        && request.resource.data.sender_id in request.resource.data.participant_ids;
+      allow update, delete: if false;
+    }
+  }
+}

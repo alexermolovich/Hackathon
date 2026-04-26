@@ -11,6 +11,7 @@ import { PrimaryButton } from '@/components/primary-button';
 import { VerifiedBadge } from '@/components/verified-badge';
 import { useGigStore } from '@/lib/gig-store';
 import { calculateAge, initials } from '@/lib/gig-utils';
+import { resolveImageSource } from '@/lib/repo-images';
 import { CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -66,6 +67,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
   const age = calculateAge(draft.birthDate);
   const savedDraft = useMemo(() => buildDraft(profile), [profile]);
+  const draftAvatarSource = resolveImageSource(draft.avatarUrl);
   const hasChanges = useMemo(
     () =>
       draft.avatarUrl !== savedDraft.avatarUrl ||
@@ -208,8 +210,8 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
                 className={`h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-orange-400/30 bg-orange-500/15 ${
                   isEditing ? '' : 'opacity-80'
                 }`}>
-                {draft.avatarUrl ? (
-                  <Image source={{ uri: draft.avatarUrl }} style={{ height: 96, width: 96 }} contentFit="cover" />
+                {draftAvatarSource ? (
+                  <Image source={draftAvatarSource} style={{ height: 96, width: 96 }} contentFit="cover" />
                 ) : (
                   <Text className="text-3xl font-black text-white">{initials(draft.username)}</Text>
                 )}

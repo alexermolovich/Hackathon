@@ -2,14 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategorySelector } from '@/components/category-selector';
 import { PrimaryButton } from '@/components/primary-button';
 import { useGigStore } from '@/lib/gig-store';
+import { resolveImageSource } from '@/lib/repo-images';
 import { APP_NAME, CURRENCY_NAME, EDUCATION_LEVELS, SIGNUP_BONUS_BSTS } from '@/lib/sidehustle-config';
 
 type OnboardingStep = 'welcome' | 'phone' | 'identity' | 'about' | 'categories' | 'terms';
@@ -80,7 +81,6 @@ export function OnboardingScreen() {
     authLoading,
     authUserEmail,
     authUserName,
-    startPhoneOnlyAuth,
     signInWithGoogle,
     requestPhoneVerification,
     confirmPhoneVerification,
@@ -124,6 +124,7 @@ export function OnboardingScreen() {
       interests.length >= 5 &&
       acceptedTerms,
   );
+  const avatarSource = resolveImageSource(avatarUrl);
 
   useEffect(() => {
     if (!profile.google_authenticated) {
@@ -175,17 +176,6 @@ export function OnboardingScreen() {
     } finally {
       setBusy(false);
     }
-  }
-
-  function handlePhoneOnly() {
-    const result = startPhoneOnlyAuth();
-
-    if (!result.ok) {
-      Alert.alert('Phone verification unavailable', result.message ?? 'Check your Firebase setup.');
-      return;
-    }
-
-    setStep('phone');
   }
 
   async function sendOtp() {
@@ -250,6 +240,8 @@ export function OnboardingScreen() {
         avatarUrl,
       });
       router.replace('/');
+    } catch (error) {
+      Alert.alert('Account incomplete', error instanceof Error ? error.message : 'Finish every account step first.');
     } finally {
       setBusy(false);
     }
@@ -262,7 +254,7 @@ export function OnboardingScreen() {
           <View>
             <Text className="text-sm font-bold text-orange-400">{APP_NAME}</Text>
             <Text className={`text-4xl font-black ${titleClass}`}>
-              {step === 'welcome' ? APP_NAME : 'Create account'}
+              {step === 'welcome' ? APP_NAME : 'Create Account'}
             </Text>
           </View>
           <Pressable
@@ -331,7 +323,7 @@ export function OnboardingScreen() {
                       onChangeText={setOtp}
                       keyboardType="number-pad"
                       maxLength={6}
-                      placeholder="······"
+                      placeholder="------"
                       placeholderTextColor="#71717A"
                       className={`${inputClass} text-center text-2xl font-black tracking-widest`}
                     />
@@ -365,8 +357,8 @@ export function OnboardingScreen() {
                     accessibilityRole="button"
                     onPress={() => void pickAvatar()}
                     className="h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-orange-400/30 bg-orange-500/15">
-                    {avatarUrl ? (
-                      <Image source={{ uri: avatarUrl }} style={{ height: 96, width: 96 }} contentFit="cover" />
+                    {avatarSource ? (
+                      <Image source={avatarSource} style={{ height: 96, width: 96 }} contentFit="cover" />
                     ) : (
                       <Ionicons name="camera" size={30} color="#F97316" />
                     )}
