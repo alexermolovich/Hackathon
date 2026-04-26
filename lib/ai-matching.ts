@@ -292,27 +292,31 @@ function scoreTaskForUser(task: Task, user: Profile, positiveConcepts: Set<strin
   const engagementScore = positiveConcepts.size
     ? ratioOverlap(Array.from(positiveConcepts), [...taskProfile.concepts, ...taskProfile.semantic_categories])
     : 0;
+  const exactSkillCount = skillMatchCount(user.interests, taskCategories);
+  const exactSkillBonus = exactSkillCount > 0 ? Math.min(0.08, exactSkillCount * 0.025) : 0;
   const distanceScore = clamp01(1 - milesBetween(user.location, task.location) / Math.max(user.search_radius, 1));
   const freshnessScore = freshnessFromCreatedAt(task.created_at);
-  const boostScore = task.is_boosted ? Math.min(1, 0.55 + task.boost_days / 14) : 0;
+  const effectiveFreshnessScore = task.is_boosted ? Math.max(freshnessScore, 0.45) : freshnessScore;
+  const boostScore = task.is_boosted ? Math.min(1, 0.62 + task.boost_days / 10) : 0;
+  const relevanceForBoost = Math.max(semanticScore, directCategoryScore, engagementScore, exactSkillBonus);
+  const boostRelevanceMultiplier = task.is_boosted ? clamp01(0.35 + relevanceForBoost * 1.3) : 0;
+  const paidBoostLift = boostScore * boostRelevanceMultiplier;
   const posterTrustScore = clamp01(
     (poster?.is_verified ? 0.35 : 0) +
       Math.min(poster?.posted_vouch_count ?? 0, 40) / 80 +
       ((poster?.rating_count ?? 0) >= 5 ? ((poster?.rating ?? 5) - 3) / 4 : 0.1),
   );
-  const exactSkillCount = skillMatchCount(user.interests, taskCategories);
-  const exactSkillBonus = exactSkillCount > 0 ? Math.min(0.08, exactSkillCount * 0.025) : 0;
   const safety = getTaskSafety(task);
   const safetyPenalty = safety.status === 'review' ? 0.18 : 0;
 
   return clamp01(
-    semanticScore * 0.36 +
-      directCategoryScore * 0.2 +
-      distanceScore * 0.14 +
-      freshnessScore * 0.1 +
-      engagementScore * 0.08 +
-      posterTrustScore * 0.07 +
-      boostScore * 0.05 +
+    semanticScore * 0.4 +
+      directCategoryScore * 0.18 +
+      distanceScore * 0.12 +
+      effectiveFreshnessScore * 0.08 +
+      engagementScore * 0.07 +
+      posterTrustScore * 0.05 +
+      paidBoostLift * 0.20 +
       exactSkillBonus -
       safetyPenalty,
   );
