@@ -3,8 +3,20 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import Swiper from 'react-native-deck-swiper';
+import {
+  Alert,
+  Animated,
+  Modal,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+  type PanResponderGestureState,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BstPurchaseSheet } from '@/components/bst-purchase-sheet';
@@ -30,6 +42,24 @@ import { APP_NAME } from '@/lib/sidehustle-config';
 
 const QUICK_BID = 'I can help you with this!';
 const webInputReset = { boxShadow: 'none', outlineStyle: 'none' } as const;
+const SWIPE_ACTIVATION_DISTANCE = 14;
+const SWIPE_DIRECTION_LOCK_RATIO = 1.15;
+const SWIPE_COMPLETION_DISTANCE = 100;
+const SWIPE_COMPLETION_VELOCITY = 0.65;
+const SWIPE_OVERLAY_DISTANCE = 42;
+const SWIPE_OUT_DURATION_MS = 210;
+
+type SwipeIntent = 'left' | 'right' | null;
+
+function isHorizontalSwipeGesture(gestureState: PanResponderGestureState) {
+  const horizontalDistance = Math.abs(gestureState.dx);
+  const verticalDistance = Math.abs(gestureState.dy);
+
+  return (
+    horizontalDistance > SWIPE_ACTIVATION_DISTANCE &&
+    horizontalDistance > verticalDistance * SWIPE_DIRECTION_LOCK_RATIO
+  );
+}
 
 export default function GigDeckScreen() {
   const {
@@ -44,10 +74,11 @@ export default function GigDeckScreen() {
     rememberSwipedTask,
     clearSwipeContext,
   } = useGigStore();
-  const swiperRef = useRef<Swiper<Task>>(null);
-  const activeCardAdvanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swipeTranslateX = useRef(new Animated.Value(0)).current;
+  const swipeIntentRef = useRef<SwipeIntent>(null);
+  const swipingLockedRef = useRef(false);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
-  const [swiperResetKey, setSwiperResetKey] = useState(0);
+  const [swipeIntent, setSwipeIntent] = useState<SwipeIntent>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [selectedTaskIndex, setSelectedTaskIndex] = useState<number | null>(null);
   const [bidNote, setBidNote] = useState(QUICK_BID);
@@ -70,6 +101,8 @@ export default function GigDeckScreen() {
   const panelClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white';
   const deckSignature = useMemo(() => deck.map((task) => task.id).join('|'), [deck]);
   const hasVisibleCard = activeCardIndex < deck.length;
+  const activeTask = hasVisibleCard ? deck[activeCardIndex] ?? null : null;
+  const activePoster = activeTask ? postersById.get(activeTask.poster_id) ?? profile : null;
   const nextPreviewTask = hasVisibleCard ? deck[activeCardIndex + 1] ?? null : null;
   const nextPreviewPoster = nextPreviewTask ? postersById.get(nextPreviewTask.poster_id) ?? profile : null;
   const compactHeader = width < 390;
@@ -78,52 +111,44 @@ export default function GigDeckScreen() {
   const emptyMessage =
     deck.length === 0 ? 'Adjust proximity or categories to open up the deck.' : 'Check back soon or widen your filters for more gigs.';
 
-  useEffect(() => {
-    clearPendingActiveCardAdvance();
-    setActiveCardIndex(0);
-  }, [deckSignature]);
+  const resetSwipePosition = useCallback(
+    (animated = true) => {
+      swipeIntentRef.current = null;
+      swipingLockedRef.current = false;
+      setSwipeIntent(null);
 
-  function clearPendingActiveCardAdvance() {
-    if (activeCardAdvanceTimeoutRef.current) {
-      clearTimeout(activeCardAdvanceTimeoutRef.current);
-      activeCardAdvanceTimeoutRef.current = null;
+      if (!animated) {
+        swipeTranslateX.stopAnimation();
+        swipeTranslateX.setValue(0);
+        return;
+      }
+
+      Animated.spring(swipeTranslateX, {
+        friction: 7,
+        tension: 70,
+        toValue: 0,
+        useNativeDriver: true,
+      }).start();
+    },
+    [swipeTranslateX],
+  );
+
+  const updateSwipeIntent = useCallback((offsetX: number) => {
+    const nextIntent = offsetX > SWIPE_OVERLAY_DISTANCE ? 'right' : offsetX < -SWIPE_OVERLAY_DISTANCE ? 'left' : null;
+
+    if (swipeIntentRef.current !== nextIntent) {
+      swipeIntentRef.current = nextIntent;
+      setSwipeIntent(nextIntent);
     }
-  }
+  }, []);
 
-  function scheduleActiveCardAdvance(cardIndex: number) {
-    clearPendingActiveCardAdvance();
-    activeCardAdvanceTimeoutRef.current = setTimeout(() => {
-      setActiveCardIndex(cardIndex + 1);
-      activeCardAdvanceTimeoutRef.current = null;
-    }, 0);
-  }
-
-  function handlePass() {
-    if (!hasVisibleCard) {
-      return;
-    }
-
-    void Haptics.selectionAsync();
-    swiperRef.current?.swipeLeft();
-  }
-
-  function handleBid() {
-    if (!hasVisibleCard) {
-      return;
-    }
-
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    swiperRef.current?.swipeRight();
-  }
-
-  function onSwipedRight(cardIndex: number) {
+  const onSwipedRight = useCallback((cardIndex: number) => {
     const task = deck[cardIndex];
 
     if (!task) {
       return;
     }
 
-    scheduleActiveCardAdvance(cardIndex);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSelectedTask(task);
     setSelectedTaskIndex(cardIndex);
@@ -134,10 +159,9 @@ export default function GigDeckScreen() {
     setAvailabilityRangeStart(null);
     setAvailabilityRangeEnd(null);
     setAvailabilityVisibleMonth(startOfMonth(new Date()));
-  }
+  }, [deck]);
 
-  function onSwipedLeft(cardIndex: number) {
-    clearPendingActiveCardAdvance();
+  const onSwipedLeft = useCallback((cardIndex: number) => {
     const task = deck[cardIndex];
 
     if (task) {
@@ -145,10 +169,119 @@ export default function GigDeckScreen() {
     }
 
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }
+  }, [deck, rememberSwipedTask]);
+
+  const finishSwipe = useCallback(
+    (direction: Exclude<SwipeIntent, null>, cardIndex: number) => {
+      if (direction === 'right') {
+        onSwipedRight(cardIndex);
+      } else {
+        onSwipedLeft(cardIndex);
+      }
+
+      setActiveCardIndex(cardIndex + 1);
+    },
+    [onSwipedLeft, onSwipedRight],
+  );
+
+  const animateSwipe = useCallback(
+    (direction: Exclude<SwipeIntent, null>, cardIndex = activeCardIndex) => {
+      if (swipingLockedRef.current || cardIndex >= deck.length) {
+        return;
+      }
+
+      swipingLockedRef.current = true;
+      swipeIntentRef.current = direction;
+      setSwipeIntent(direction);
+
+      Animated.timing(swipeTranslateX, {
+        duration: SWIPE_OUT_DURATION_MS,
+        toValue: direction === 'right' ? width + 180 : -width - 180,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        swipeTranslateX.setValue(0);
+        swipeIntentRef.current = null;
+        swipingLockedRef.current = false;
+        setSwipeIntent(null);
+
+        if (finished) {
+          finishSwipe(direction, cardIndex);
+        }
+      });
+    },
+    [activeCardIndex, deck.length, finishSwipe, swipeTranslateX, width],
+  );
+
+  const swipePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponder: (_event, gestureState) => isHorizontalSwipeGesture(gestureState),
+        onMoveShouldSetPanResponderCapture: (_event, gestureState) => isHorizontalSwipeGesture(gestureState),
+        onPanResponderGrant: () => {
+          swipeTranslateX.stopAnimation();
+          swipeTranslateX.setValue(0);
+        },
+        onPanResponderMove: (_event, gestureState) => {
+          swipeTranslateX.setValue(gestureState.dx);
+          updateSwipeIntent(gestureState.dx);
+        },
+        onPanResponderRelease: (_event, gestureState) => {
+          const direction = gestureState.dx >= 0 ? 'right' : 'left';
+          const shouldComplete =
+            Math.abs(gestureState.dx) > SWIPE_COMPLETION_DISTANCE ||
+            Math.abs(gestureState.vx) > SWIPE_COMPLETION_VELOCITY;
+
+          if (shouldComplete) {
+            animateSwipe(direction);
+          } else {
+            resetSwipePosition();
+          }
+        },
+        onPanResponderTerminate: () => resetSwipePosition(),
+        onShouldBlockNativeResponder: () => false,
+      }),
+    [animateSwipe, resetSwipePosition, swipeTranslateX, updateSwipeIntent],
+  );
+
+  const activeCardTransform = {
+    transform: [
+      { translateX: swipeTranslateX },
+      {
+        rotate: swipeTranslateX.interpolate({
+          extrapolate: 'clamp',
+          inputRange: [-width, 0, width],
+          outputRange: ['-8deg', '0deg', '8deg'],
+        }),
+      },
+    ],
+  };
+
+  useEffect(() => {
+    resetSwipePosition(false);
+    setActiveCardIndex(0);
+  }, [deckSignature, resetSwipePosition]);
+
+  const handlePass = useCallback(() => {
+    if (!hasVisibleCard) {
+      return;
+    }
+
+    void Haptics.selectionAsync();
+    animateSwipe('left');
+  }, [animateSwipe, hasVisibleCard]);
+
+  const handleBid = useCallback(() => {
+    if (!hasVisibleCard) {
+      return;
+    }
+
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    animateSwipe('right');
+  }, [animateSwipe, hasVisibleCard]);
 
   function closeBidSheet() {
-    clearPendingActiveCardAdvance();
     const restoreIndex =
       selectedTaskIndex !== null && deck[selectedTaskIndex]?.id === selectedTask?.id
         ? selectedTaskIndex
@@ -159,7 +292,7 @@ export default function GigDeckScreen() {
 
     if (restoreIndex >= 0) {
       setActiveCardIndex(restoreIndex);
-      setSwiperResetKey((current) => current + 1);
+      resetSwipePosition(false);
     }
   }
 
@@ -228,7 +361,7 @@ export default function GigDeckScreen() {
   useFocusEffect(
     useCallback(() => {
       return () => {
-        clearPendingActiveCardAdvance();
+        resetSwipePosition(false);
         setSelectedTask(null);
         setSelectedTaskIndex(null);
         setProfileOpen(false);
@@ -236,7 +369,7 @@ export default function GigDeckScreen() {
         setPurchaseOpen(false);
         setVerificationOpen(false);
       };
-    }, []),
+    }, [resetSwipePosition]),
   );
 
   return (
@@ -266,54 +399,39 @@ export default function GigDeckScreen() {
           </View>
         </View>
 
-        <View className="mt-4 flex-1 px-6" style={[styles.deckViewport, { paddingBottom: deckBottomPadding }]}>
-          {hasVisibleCard ? (
+        <View
+          className={compactHeader ? 'mt-4 flex-1 px-3' : 'mt-4 flex-1 px-6'}
+          style={[styles.deckViewport, { paddingBottom: deckBottomPadding }]}>
+          {hasVisibleCard && activeTask && activePoster ? (
             <>
               {nextPreviewTask && nextPreviewPoster ? (
                 <View pointerEvents="none" style={[styles.nextCardPreview, { bottom: deckBottomPadding }]}>
-                  <TaskCard task={nextPreviewTask} poster={nextPreviewPoster} onPass={handlePass} onBid={handleBid} />
+                  <TaskCard
+                    task={nextPreviewTask}
+                    poster={nextPreviewPoster}
+                    scrollEnabled={false}
+                    onPass={handlePass}
+                    onBid={handleBid}
+                  />
                 </View>
               ) : null}
-              <Swiper
-                key={`${deckSignature}:${swiperResetKey}`}
-                ref={swiperRef}
-                cards={deck}
-                renderCard={(task?: Task) => {
-                  if (!task) {
-                    return null;
-                  }
-
-                  const poster = postersById.get(task.poster_id) ?? profile;
-
-                  return <TaskCard task={task} poster={poster} onPass={handlePass} onBid={handleBid} />;
-                }}
-                onSwipedLeft={onSwipedLeft}
-                onSwipedRight={onSwipedRight}
-                cardIndex={activeCardIndex}
-                backgroundColor="transparent"
-                stackSize={1}
-                verticalSwipe={false}
-                horizontalThreshold={90}
-                animateOverlayLabelsOpacity
-                containerStyle={{ ...styles.swiperContainer, bottom: deckBottomPadding }}
-                cardStyle={styles.swiperCard}
-                overlayLabels={{
-                  left: {
-                    title: 'PASS',
-                    style: {
-                      label: styles.passLabel,
-                      wrapper: styles.leftOverlay,
-                    },
-                  },
-                  right: {
-                    title: 'BID',
-                    style: {
-                      label: styles.bidLabel,
-                      wrapper: styles.rightOverlay,
-                    },
-                  },
-                }}
-              />
+              <Animated.View
+                {...swipePanResponder.panHandlers}
+                style={[styles.activeSwipeCard, { bottom: deckBottomPadding }, activeCardTransform]}>
+                {swipeIntent ? (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.swipeOverlay,
+                      swipeIntent === 'left' ? styles.leftOverlay : styles.rightOverlay,
+                    ]}>
+                    <Text style={swipeIntent === 'left' ? styles.passLabel : styles.bidLabel}>
+                      {swipeIntent === 'left' ? 'PASS' : 'BID'}
+                    </Text>
+                  </View>
+                ) : null}
+                <TaskCard task={activeTask} poster={activePoster} onPass={handlePass} onBid={handleBid} />
+              </Animated.View>
             </>
           ) : (
             <View className={`flex-1 items-center justify-center rounded-[32px] border px-8 ${panelClass}`}>
@@ -469,31 +587,35 @@ const styles = StyleSheet.create({
     zIndex: 0,
   },
   nextCardPreview: {
-    left: '4%',
     position: 'absolute',
-    right: '4%',
+    left: 0,
+    right: 0,
     top: 0,
-    width: '92%',
     zIndex: 0,
   },
-  swiperContainer: {
-    flex: 1,
-    zIndex: 1,
-  },
-  swiperCard: {
-    height: '100%',
-    left: '4%',
-    right: '4%',
+  activeSwipeCard: {
+    bottom: 0,
+    position: 'absolute',
+    left: 0,
+    right: 0,
     top: 0,
-    width: '92%',
+    zIndex: 2,
+  },
+  swipeOverlay: {
+    backgroundColor: 'transparent',
+    bottom: 0,
+    left: 0,
+    padding: 24,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 5,
   },
   leftOverlay: {
     alignItems: 'flex-end',
-    padding: 24,
   },
   rightOverlay: {
     alignItems: 'flex-start',
-    padding: 24,
   },
   passLabel: {
     borderColor: '#F87171',

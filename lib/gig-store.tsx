@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 
 import { defaultProfile } from './default-profile';
+import { demoBypassProfiles } from './demo-bypass-profiles';
 import {
   CHAT_UNLOCK_COST_BSTS,
   SEE_MORE_BIDDERS_COST_BSTS,
@@ -76,6 +77,7 @@ type OnboardingInput = {
   educationLevel: string;
   interests: string[];
   avatarUrl: string | null;
+  selfieVerified: boolean;
 };
 
 type ProfileUpdateInput = Partial<
@@ -116,6 +118,8 @@ type GigStoreValue = {
   matches: EnrichedMatch[];
   messages: Message[];
   isLiveMode: boolean;
+  authBypassActive: boolean;
+  authBypassProfiles: Profile[];
   isAccountReady: boolean;
   authLoading: boolean;
   authUserEmail: string | null;
@@ -141,6 +145,7 @@ type GigStoreValue = {
   verifySelfie: (avatarUri: string) => Promise<void>;
   startPhoneOnlyAuth: () => StoreActionResult;
   signInWithGoogle: () => Promise<StoreActionResult>;
+  signInWithAuthBypass: (profileId: string) => Promise<StoreActionResult>;
   requestPhoneVerification: (phoneNumber: string) => Promise<PhoneActionResult>;
   confirmPhoneVerification: (phoneNumber: string, token: string) => Promise<PhoneActionResult>;
   completeOnboarding: (input: OnboardingInput) => Promise<void>;
@@ -346,7 +351,6 @@ function isProfileAppReady(profile: Profile) {
       profile.phone_verified &&
       profile.is_onboarded &&
       profile.username.trim() &&
-      profile.avatar_url &&
       profile.bio.trim() &&
       profile.birth_date &&
       profile.education_level &&
@@ -412,6 +416,47 @@ function buildPublicProfileRecord(profile: Profile) {
   };
 }
 
+function mergeProfilesById(items: Profile[]) {
+  const byId = new Map<string, Profile>();
+
+  items.forEach((item) => {
+    if (item.id && item.username.trim()) {
+      byId.set(item.id, item);
+    }
+  });
+
+  return Array.from(byId.values()).sort((left, right) => left.username.localeCompare(right.username));
+}
+
+function asBypassReadyProfile(profile: Profile): Profile {
+  const fallbackCategories = ['Tech Setup', 'Cleaning', 'Organizing', 'Moving', 'Events'];
+  const interests = profile.interests.length >= 5 ? profile.interests : mergeStringLists(profile.interests, profile.skills, fallbackCategories).slice(0, 5);
+  const skills = profile.skills.length > 0 ? profile.skills : interests;
+
+  return {
+    ...defaultProfile,
+    ...profile,
+    username: profile.username.trim() || 'Demo Hustler',
+    avatar_url: profile.avatar_url ?? 'repo://demo/avatars/demo-hustler.png',
+    bio: profile.bio.trim() || 'Demo bypass account for testing SideHustle.',
+    skills,
+    interests,
+    credits: profile.credits || 550,
+    phone_number: profile.phone_number || '+16055550100',
+    phone_verified: true,
+    birth_date: profile.birth_date || '1995-06-15',
+    education_level: profile.education_level || 'Some college',
+    accepted_terms_at: profile.accepted_terms_at || new Date().toISOString(),
+    signup_bonus_awarded: true,
+    google_authenticated: true,
+    is_onboarded: true,
+  };
+}
+
+function mergeStringLists(...lists: string[][]) {
+  return Array.from(new Set(lists.flat().map((item) => item.trim()).filter(Boolean)));
+}
+
 function buildMatchRecord(match: GigMatch, task: Task | undefined) {
   const posterId = task?.poster_id ?? '';
   const participantIds = Array.from(new Set([posterId, match.doer_id].filter(Boolean)));
@@ -444,6 +489,8 @@ export function GigProvider({ children }: PropsWithChildren) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [swipedTaskIds, setSwipedTaskIds] = useState<string[]>([]);
   const [colorMode, setColorMode] = useState<'light' | 'dark'>(systemScheme === 'light' ? 'light' : 'dark');
+  const [authBypassActive, setAuthBypassActive] = useState(false);
+  const [authBypassProfiles, setAuthBypassProfiles] = useState<Profile[]>(demoBypassProfiles);
   const [authLoading, setAuthLoading] = useState(hasFirebaseConfig);
   const [authUserEmail, setAuthUserEmail] = useState<string | null>(null);
   const [authUserName, setAuthUserName] = useState<string | null>(null);
@@ -475,19 +522,22 @@ export function GigProvider({ children }: PropsWithChildren) {
     [],
   );
 
-  const persistProfile = useCallback(async (nextProfile: Profile) => {
-    if (!firebaseDb || !nextProfile.google_authenticated) {
-      return;
-    }
+  const persistProfile = useCallback(
+    async (nextProfile: Profile) => {
+      if (!firebaseDb || authBypassActive || !nextProfile.google_authenticated) {
+        return;
+      }
 
-    await setDoc(doc(firebaseDb, 'profiles', nextProfile.id), buildPrivateProfileRecord(nextProfile), { merge: true });
+      await setDoc(doc(firebaseDb, 'profiles', nextProfile.id), buildPrivateProfileRecord(nextProfile), { merge: true });
 
-    if (nextProfile.is_onboarded && nextProfile.username.trim()) {
-      await setDoc(doc(firebaseDb, 'public_profiles', nextProfile.id), buildPublicProfileRecord(nextProfile), {
-        merge: true,
-      });
-    }
-  }, []);
+      if (nextProfile.is_onboarded && nextProfile.username.trim()) {
+        await setDoc(doc(firebaseDb, 'public_profiles', nextProfile.id), buildPublicProfileRecord(nextProfile), {
+          merge: true,
+        });
+      }
+    },
+    [authBypassActive],
+  );
 
   const applyAuthUser = useCallback(async (user: User) => {
     const displayName = getAuthDisplayName(user);
@@ -521,7 +571,7 @@ export function GigProvider({ children }: PropsWithChildren) {
   }, [persistProfile]);
 
   const requestCurrentLocation = useCallback(async () => {
-    if (!hasFirebaseConfig) {
+    if (!hasFirebaseConfig || authBypassActive) {
       return;
     }
 
@@ -542,14 +592,14 @@ export function GigProvider({ children }: PropsWithChildren) {
 
       syncProfile(nextProfile);
 
-      if (firebaseDb && currentProfile.google_authenticated) {
+      if (!authBypassActive && firebaseDb && currentProfile.google_authenticated) {
         await persistProfile(nextProfile);
         scheduleProfileAiRefresh(600);
       }
     } catch {
       // Rapid City defaults keep distance filters usable if location is unavailable.
     }
-  }, [persistProfile, syncProfile]);
+  }, [authBypassActive, persistProfile, syncProfile]);
 
   const mergeMatches = useCallback((existing: GigMatch[], incoming: GigMatch[]) => {
     const byId = new Map(existing.map((match) => [match.id, match]));
@@ -645,7 +695,35 @@ export function GigProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
+    const database = firebaseDb;
+
+    if (!hasFirebaseConfig || !database) {
+      setAuthBypassProfiles(demoBypassProfiles);
+      return;
+    }
+
+    return onSnapshot(
+      collection(database, 'public_profiles'),
+      (snapshot) => {
+        const publicProfiles = snapshot.docs
+          .map((item) => asBypassReadyProfile(buildProfileFromRow(item.id, item.data() as Record<string, unknown>)))
+          .filter((item) => item.username.trim());
+
+        setAuthBypassProfiles(mergeProfilesById([...publicProfiles, ...demoBypassProfiles]));
+      },
+      () => {
+        setAuthBypassProfiles(demoBypassProfiles);
+      },
+    );
+  }, []);
+
+  useEffect(() => {
     const auth = firebaseAuth;
+
+    if (authBypassActive) {
+      setAuthLoading(false);
+      return;
+    }
 
     if (!auth) {
       setAuthLoading(false);
@@ -676,7 +754,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       active = false;
       unsubscribe();
     };
-  }, [applyAuthUser]);
+  }, [applyAuthUser, authBypassActive]);
 
   useEffect(() => {
     void requestCurrentLocation();
@@ -711,7 +789,7 @@ export function GigProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const database = firebaseDb;
 
-    if (!hasFirebaseConfig || !database || !profile.google_authenticated) {
+    if (!hasFirebaseConfig || !database || authBypassActive || !profile.google_authenticated) {
       return;
     }
 
@@ -763,8 +841,38 @@ export function GigProvider({ children }: PropsWithChildren) {
     mapFirebaseTask,
     mergeMatches,
     mergeMessages,
+    authBypassActive,
     profile,
   ]);
+
+  useEffect(() => {
+    const database = firebaseDb;
+
+    if (!authBypassActive || !hasFirebaseConfig || !database) {
+      return;
+    }
+
+    const unsubscribeTasks = onSnapshot(collection(database, 'tasks'), (snapshot) => {
+      const liveTasks = snapshot.docs
+        .map((item) => mapFirebaseTask({ id: item.id, ...item.data() }))
+        .filter((task) => task.poster_id && task.title.trim());
+
+      setTasks(liveTasks.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    });
+
+    return () => {
+      unsubscribeTasks();
+    };
+  }, [authBypassActive, mapFirebaseTask]);
+
+  useEffect(() => {
+    if (!authBypassActive) {
+      return;
+    }
+
+    const currentProfile = profileRef.current;
+    setProfiles(mergeProfilesById([currentProfile, ...authBypassProfiles]));
+  }, [authBypassActive, authBypassProfiles]);
 
   const excludedDeckTaskIds = useMemo(() => {
     const ids = new Set(swipedTaskIds);
@@ -782,7 +890,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     [excludedDeckTaskIds, matches, profile, profiles, tasks],
   );
   const enrichedMatches = useMemo(() => enrichMatches(matches, tasks, profiles), [matches, profiles, tasks]);
-  const isAccountReady = useMemo(() => isProfileAppReady(profile), [profile]);
+  const isAccountReady = useMemo(() => authBypassActive || isProfileAppReady(profile), [authBypassActive, profile]);
 
   async function withTaskAiProfile(task: Task, existingTask?: Task): Promise<Task> {
     const signature = createTaskAiProfileSignature(task);
@@ -834,6 +942,10 @@ export function GigProvider({ children }: PropsWithChildren) {
   }
 
   function scheduleProfileAiRefresh(delayMs = PROFILE_AI_REFRESH_DEBOUNCE_MS) {
+    if (authBypassActive) {
+      return;
+    }
+
     clearProfileAiRefreshTimeout();
     const runId = profileAiRefreshRunIdRef.current + 1;
     profileAiRefreshRunIdRef.current = runId;
@@ -925,7 +1037,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       syncProfile(nextProfile);
     }
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await setDoc(doc(firebaseDb, 'tasks', task.id), {
         ...task,
         image_urls: toShareableImageRefs(task.image_urls),
@@ -984,7 +1096,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       syncProfile({ ...profile, credits: profile.credits - boostDelta });
     }
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await setDoc(
         doc(firebaseDb, 'tasks', taskId),
         {
@@ -1016,7 +1128,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       return { ok: false, message: 'Completed gigs stay in Archived and cannot be deleted.' };
     }
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       try {
         await deleteDoc(doc(firebaseDb, 'tasks', taskId));
       } catch {
@@ -1056,7 +1168,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     setMatches((current) => [match, ...current]);
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await setDoc(doc(firebaseDb, 'matches', match.id), buildMatchRecord(match, task));
     }
 
@@ -1086,7 +1198,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     setMatches((current) => [match, ...current]);
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await setDoc(doc(firebaseDb, 'matches', match.id), buildMatchRecord(match, task));
     }
 
@@ -1104,7 +1216,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       ),
     );
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
         status: 'matched',
         doer_seen_match_at: null,
@@ -1124,7 +1236,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       current.map((matchItem) => (matchItem.id === matchId ? { ...matchItem, is_unlocked: true } : matchItem)),
     );
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
         is_unlocked: true,
         updated_at: new Date().toISOString(),
@@ -1153,7 +1265,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     syncProfile(nextProfile);
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await persistProfile(nextProfile);
     }
 
@@ -1173,7 +1285,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       current.map((item) => (item.id === matchId ? { ...item, doer_completed_at: completedAt } : item)),
     );
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
         doer_completed_at: completedAt,
         updated_at: completedAt,
@@ -1235,7 +1347,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       return current;
     });
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
         status: 'completed',
         doer_completed_at: match.doer_completed_at ?? completedAt,
@@ -1297,7 +1409,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       current.id === targetProfileId ? applyReceivedRating(current, rating, previousRating) : current,
     );
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
         [ratingField]: rating,
         updated_at: new Date().toISOString(),
@@ -1340,7 +1452,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     setMessages((current) => [...current, message]);
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       const match = matches.find((item) => item.id === matchId);
       const task = match ? tasks.find((item) => item.id === match.task_id) : undefined;
       await setDoc(doc(firebaseDb, 'messages', message.id), buildMessageRecord(message, match, task));
@@ -1364,7 +1476,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       ),
     );
 
-    const database = firebaseDb;
+    const database = authBypassActive ? null : firebaseDb;
 
     if (database) {
       await Promise.allSettled(
@@ -1393,7 +1505,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       ),
     );
 
-    const database = firebaseDb;
+    const database = authBypassActive ? null : firebaseDb;
 
     if (database) {
       await Promise.allSettled(
@@ -1427,7 +1539,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       current.map((item) => (item.id === matchId ? { ...item, [field]: readAt } : item)),
     );
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await updateDoc(doc(firebaseDb, 'matches', matchId), {
         [field]: readAt,
         updated_at: readAt,
@@ -1444,7 +1556,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     syncProfile(nextProfile);
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await persistProfile(nextProfile);
     }
   }
@@ -1453,6 +1565,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     setAuthLoading(true);
 
     try {
+      setAuthBypassActive(false);
       const result = await signInWithGoogleFirebase();
       const user = result.user ?? null;
 
@@ -1464,6 +1577,40 @@ export function GigProvider({ children }: PropsWithChildren) {
       }
 
       await applyAuthUser(user);
+
+      return { ok: true };
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function signInWithAuthBypass(profileId: string): Promise<StoreActionResult> {
+    const selectedProfile = authBypassProfiles.find((item) => item.id === profileId);
+
+    if (!selectedProfile) {
+      return { ok: false, message: 'That demo account is not available right now.' };
+    }
+
+    setAuthLoading(true);
+
+    try {
+      clearProfileAiRefreshTimeout();
+      profileAiRefreshRunIdRef.current += 1;
+
+      const nextProfile = asBypassReadyProfile(selectedProfile);
+
+      if (firebaseAuth?.currentUser) {
+        await firebaseAuth.signOut().catch(() => undefined);
+      }
+
+      setAuthBypassActive(true);
+      setAuthUserEmail(null);
+      setAuthUserName(nextProfile.username);
+      setMatches([]);
+      setMessages([]);
+      setSwipedTaskIds([]);
+      syncProfile(nextProfile);
+      setProfiles(mergeProfilesById([nextProfile, ...authBypassProfiles]));
 
       return { ok: true };
     } finally {
@@ -1519,7 +1666,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     syncProfile(nextProfile);
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       try {
         await persistProfile(nextProfile);
       } catch {
@@ -1541,7 +1688,6 @@ export function GigProvider({ children }: PropsWithChildren) {
       !input.birthDate ||
       !input.bio.trim() ||
       !input.educationLevel ||
-      !input.avatarUrl ||
       input.interests.length < 5
     ) {
       throw new Error('Account details are incomplete.');
@@ -1561,7 +1707,7 @@ export function GigProvider({ children }: PropsWithChildren) {
       avatar_url: input.avatarUrl,
       google_authenticated: true,
       phone_verified: true,
-      is_verified: profile.is_verified,
+      is_verified: profile.is_verified || input.selfieVerified,
       is_onboarded: true,
       accepted_terms_at: now,
       signup_bonus_awarded: true,
@@ -1570,7 +1716,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     syncProfile(nextProfile);
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await persistProfile(nextProfile);
     }
   }
@@ -1586,7 +1732,7 @@ export function GigProvider({ children }: PropsWithChildren) {
 
     syncProfile(nextProfile);
 
-    if (firebaseDb) {
+    if (!authBypassActive && firebaseDb) {
       await persistProfile(nextProfile);
     }
   }
@@ -1646,6 +1792,7 @@ export function GigProvider({ children }: PropsWithChildren) {
   function logout() {
     clearProfileAiRefreshTimeout();
     profileAiRefreshRunIdRef.current += 1;
+    setAuthBypassActive(false);
 
     if (firebaseAuth) {
       void firebaseAuth.signOut();
@@ -1657,6 +1804,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     setTasks([]);
     setMatches([]);
     setMessages([]);
+    setSwipedTaskIds([]);
     syncProfile({
       ...defaultProfile,
       location: profile.location,
@@ -1671,7 +1819,9 @@ export function GigProvider({ children }: PropsWithChildren) {
     deck,
     matches: enrichedMatches,
     messages,
-    isLiveMode: hasFirebaseConfig,
+    isLiveMode: hasFirebaseConfig && !authBypassActive,
+    authBypassActive,
+    authBypassProfiles,
     isAccountReady,
     authLoading,
     authUserEmail,
@@ -1697,6 +1847,7 @@ export function GigProvider({ children }: PropsWithChildren) {
     verifySelfie,
     startPhoneOnlyAuth,
     signInWithGoogle,
+    signInWithAuthBypass,
     requestPhoneVerification,
     confirmPhoneVerification,
     completeOnboarding,

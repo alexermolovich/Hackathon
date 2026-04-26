@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
+import { memo } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
@@ -15,11 +16,19 @@ type TaskCardProps = {
   task: Task;
   poster: Profile;
   revealPoster?: boolean;
+  scrollEnabled?: boolean;
   onPass?: () => void;
   onBid?: () => void;
 };
 
-export function TaskCard({ task, poster, revealPoster = false, onPass, onBid }: TaskCardProps) {
+export const TaskCard = memo(function TaskCard({
+  task,
+  poster,
+  revealPoster = false,
+  scrollEnabled = true,
+  onPass,
+  onBid,
+}: TaskCardProps) {
   const { isDark } = useGigStore();
   const { height } = useWindowDimensions();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
@@ -33,7 +42,16 @@ export function TaskCard({ task, poster, revealPoster = false, onPass, onBid }: 
 
   return (
     <View className={`h-full overflow-hidden rounded-[30px] border ${panelClass}`}>
-      <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerClassName="pb-5">
+      <ScrollView
+        bounces={false}
+        decelerationRate="fast"
+        directionalLockEnabled
+        nestedScrollEnabled
+        overScrollMode="never"
+        scrollEnabled={scrollEnabled}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        contentContainerClassName="pb-5">
         <View className={isDark ? 'bg-zinc-900' : 'bg-zinc-200'} style={{ height: imageHeight }}>
           {taskImageSource ? (
             <Image
@@ -52,7 +70,13 @@ export function TaskCard({ task, poster, revealPoster = false, onPass, onBid }: 
         </View>
 
         <View className="px-5 pt-4">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pr-2">
+          <ScrollView
+            horizontal
+            bounces={false}
+            directionalLockEnabled
+            scrollEnabled={scrollEnabled}
+            showsHorizontalScrollIndicator={false}
+            contentContainerClassName="gap-2 pr-2">
             <InfoChip icon="location" label={task.location_label} color="#10B981" isDark={isDark} />
             <InfoChip icon="cash" label={`Gig pays $${task.budget}`} color="#F97316" isDark={isDark} />
           </ScrollView>
@@ -135,7 +159,7 @@ export function TaskCard({ task, poster, revealPoster = false, onPass, onBid }: 
       </ScrollView>
     </View>
   );
-}
+});
 
 type InfoChipProps = {
   icon: keyof typeof Ionicons.glyphMap;

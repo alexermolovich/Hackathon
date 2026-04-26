@@ -10,12 +10,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CategorySelector } from '@/components/category-selector';
 import { PrimaryButton } from '@/components/primary-button';
 import { useGigStore } from '@/lib/gig-store';
+import type { Profile } from '@/lib/gig-types';
 import {
   createPersistentProfileImageRef,
   createPersistentProfileImageRefFromUri,
   PROFILE_IMAGE_PICKER_OPTIONS,
 } from '@/lib/profile-images';
 import { resolveImageSource } from '@/lib/repo-images';
+import { checkSelfieForSingleFace, type SelfieFaceCheckResult } from '@/lib/selfie-face-check';
 import { APP_NAME, CURRENCY_NAME, EDUCATION_LEVELS, SIGNUP_BONUS_BSTS } from '@/lib/sidehustle-config';
 
 type OnboardingStep = 'welcome' | 'phone' | 'identity' | 'about' | 'categories' | 'terms';
@@ -141,6 +143,43 @@ function isValidBirthDate(value: string) {
   return Boolean(date && date <= new Date());
 }
 
+function onboardingFaceCheckMessage(result: SelfieFaceCheckResult) {
+  if (result.status === 'NO_FACE') {
+    return 'No face was detected. Keep your face centered and well lit.';
+  }
+
+  if (result.status === 'MULTIPLE_FACES') {
+    return 'Only one face can be in the selfie.';
+  }
+
+  if (result.status === 'LOW_QUALITY') {
+    return 'The selfie is too low quality. Move closer and use better lighting.';
+  }
+
+  if (result.status === 'UNSUPPORTED') {
+    return 'Face detection could not load on this device.';
+  }
+
+  return 'Take a fresh, clear selfie and try again.';
+}
+
+function waitForOnboardingFaceCheck(promise: Promise<SelfieFaceCheckResult>) {
+  return new Promise<SelfieFaceCheckResult>((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error('face-check-timeout')), 8_000);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+}
+
 function hexToRgb(hex: string) {
   const cleanHex = hex.replace('#', '');
   return {
@@ -191,7 +230,9 @@ export function OnboardingScreen() {
     authLoading,
     authUserEmail,
     authUserName,
+    authBypassProfiles,
     signInWithGoogle,
+    signInWithAuthBypass,
     requestPhoneVerification,
     confirmPhoneVerification,
     completeOnboarding,
@@ -211,10 +252,14 @@ export function OnboardingScreen() {
   const [educationLevel, setEducationLevel] = useState(profile.education_level ?? '');
   const [interests, setInterests] = useState<string[]>(profile.interests);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatar_url);
+  const [selfieVerified, setSelfieVerified] = useState(profile.is_verified);
   const [acceptedTerms, setAcceptedTerms] = useState(Boolean(profile.accepted_terms_at));
   const [termsOpen, setTermsOpen] = useState(false);
   const [termsScrolledToEnd, setTermsScrolledToEnd] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [, setLogoTapCount] = useState(0);
+  const [bypassPickerOpen, setBypassPickerOpen] = useState(false);
+  const [bypassBusy, setBypassBusy] = useState(false);
   const [avatarCameraOpen, setAvatarCameraOpen] = useState(false);
   const [avatarCameraBusy, setAvatarCameraBusy] = useState(false);
   const [avatarCameraReady, setAvatarCameraReady] = useState(false);
@@ -236,7 +281,7 @@ export function OnboardingScreen() {
   }`;
   const canSendOtp = Boolean(phoneNumber.trim()) && !busy;
   const canVerifyOtp = /^\d{6}$/.test(otp.trim()) && !busy;
-  const canLeaveIdentity = Boolean(username.trim() && avatarUrl);
+  const canLeaveIdentity = Boolean(username.trim());
   const canLeaveAbout = Boolean(isValidBirthDate(birthDate) && bio.trim() && educationLevel);
   const canFinish = Boolean(
     profile.google_authenticated &&
@@ -302,7 +347,7 @@ export function OnboardingScreen() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('Camera access needed', 'Take a fresh profile photo to finish account creation.');
+      Alert.alert('Camera access needed', 'You can skip the selfie and create an unverified account, or allow camera access to verify now.');
       return;
     }
 
@@ -312,9 +357,9 @@ export function OnboardingScreen() {
       setBusy(true);
 
       try {
-        setAvatarUrl(await createPersistentProfileImageRef(result.assets[0]));
+        await verifyAndStoreOnboardingSelfie(result.assets[0].uri, result.assets[0]);
       } catch {
-        Alert.alert('Photo save failed', 'Take another photo and try again.');
+        Alert.alert('Selfie check failed', 'Take another clear selfie, or continue with an unverified account.');
       } finally {
         setBusy(false);
       }
@@ -382,15 +427,31 @@ export function OnboardingScreen() {
     setAvatarCameraBusy(true);
 
     try {
-      setAvatarUrl(await createPersistentProfileImageRefFromUri(canvas.toDataURL('image/jpeg', 0.9)));
+      await verifyAndStoreOnboardingSelfie(canvas.toDataURL('image/jpeg', 0.9));
       stopAvatarCamera();
       setAvatarCameraReady(false);
       setAvatarCameraOpen(false);
     } catch {
-      Alert.alert('Photo save failed', 'Take another photo and try again.');
+      Alert.alert('Selfie check failed', 'Take another clear selfie, or continue with an unverified account.');
     } finally {
       setAvatarCameraBusy(false);
     }
+  }
+
+  async function verifyAndStoreOnboardingSelfie(uri: string, asset?: ImagePicker.ImagePickerAsset) {
+    const faceCheck = await waitForOnboardingFaceCheck(checkSelfieForSingleFace(uri));
+
+    if (faceCheck.status !== 'READY') {
+      Alert.alert('Selfie not verified', `${onboardingFaceCheckMessage(faceCheck)} You can still create an unverified account.`);
+      return;
+    }
+
+    const nextAvatarUrl = asset
+      ? await createPersistentProfileImageRef(asset)
+      : await createPersistentProfileImageRefFromUri(uri);
+
+    setAvatarUrl(nextAvatarUrl);
+    setSelfieVerified(true);
   }
 
   async function continueWithGoogle() {
@@ -404,6 +465,37 @@ export function OnboardingScreen() {
       }
     } finally {
       setBusy(false);
+    }
+  }
+
+  function handleHomeLogoPress() {
+    setLogoTapCount((current) => {
+      const nextCount = current + 1;
+
+      if (nextCount >= 5) {
+        setBypassPickerOpen(true);
+        return 0;
+      }
+
+      return nextCount;
+    });
+  }
+
+  async function runAuthBypass(profileId: string) {
+    setBypassBusy(true);
+
+    try {
+      const result = await signInWithAuthBypass(profileId);
+
+      if (!result.ok) {
+        Alert.alert('Demo login unavailable', result.message ?? 'Pick another account and try again.');
+        return;
+      }
+
+      setBypassPickerOpen(false);
+      router.replace('/');
+    } finally {
+      setBypassBusy(false);
     }
   }
 
@@ -492,6 +584,7 @@ export function OnboardingScreen() {
         educationLevel,
         interests,
         avatarUrl,
+        selfieVerified,
       });
       router.replace('/');
     } catch (error) {
@@ -537,9 +630,14 @@ export function OnboardingScreen() {
 
                   <View className="relative z-10 flex-1">
                     <View style={styles.welcomeLogoAnchor}>
-                      <View className="h-30 w-30 items-center justify-center overflow-hidden rounded-[20px] bg-transparent">
+                      <Pressable
+                        accessibilityLabel="SideHustle logo"
+                        accessibilityRole="button"
+                        hitSlop={12}
+                        onPress={handleHomeLogoPress}
+                        className="h-30 w-30 items-center justify-center overflow-hidden rounded-[20px] bg-transparent">
                         <Image source={homeLogoSource} style={{ height: 150, width: 150 }} contentFit="contain" />
-                      </View>
+                      </Pressable>
                     </View>
 
                     <View className="flex-row justify-center" style={styles.welcomeBrandCenter}>
@@ -659,7 +757,17 @@ export function OnboardingScreen() {
                       Profile photo
                     </Text>
                     <Text className={`mt-1 text-sm leading-5 ${mutedClass}`}>
-                      {avatarUrl ? 'Ready for account creation' : 'Take a fresh camera photo'}
+                      {selfieVerified ? 'Selfie captured. Your account will be verified.' : 'Optional selfie. Skip it to create an unverified account.'}
+                    </Text>
+                  </View>
+                </View>
+                <View className={`mb-5 rounded-[24px] border p-4 ${softClass}`}>
+                  <View className="flex-row items-start gap-3">
+                    <Ionicons name={selfieVerified ? 'shield-checkmark' : 'information-circle'} size={20} color={selfieVerified ? '#10B981' : '#F97316'} />
+                    <Text className={`flex-1 text-sm font-semibold leading-5 ${mutedClass}`}>
+                      {selfieVerified
+                        ? 'Tip: your selfie will turn on the verified badge after account creation.'
+                        : 'Tip: verification is not needed to create your account. Without a selfie, posting, chatting, and paid actions stay locked until you verify later.'}
                     </Text>
                   </View>
                 </View>
@@ -804,6 +912,22 @@ export function OnboardingScreen() {
         titleClass={titleClass}
         visible={termsOpen}
       />
+      <AuthBypassAccountModal
+        busy={bypassBusy}
+        isDark={isDark}
+        mutedClass={mutedClass}
+        onClose={() => {
+          if (!bypassBusy) {
+            setBypassPickerOpen(false);
+          }
+        }}
+        onSelect={(profileId) => void runAuthBypass(profileId)}
+        panelClass={panelClass}
+        profiles={authBypassProfiles}
+        softClass={softClass}
+        titleClass={titleClass}
+        visible={bypassPickerOpen}
+      />
       <Modal
         transparent
         animationType="fade"
@@ -814,7 +938,7 @@ export function OnboardingScreen() {
             <View className="mb-4 flex-row items-center justify-between">
               <View>
                 <Text className="text-xs font-bold text-orange-400">{APP_NAME}</Text>
-                <Text className={`text-2xl font-black ${titleClass}`}>Profile photo</Text>
+                <Text className={`text-2xl font-black ${titleClass}`}>Selfie verification</Text>
               </View>
               <Pressable
                 accessibilityLabel="Close profile photo camera"
@@ -826,7 +950,7 @@ export function OnboardingScreen() {
               </Pressable>
             </View>
             <Text className={`mb-4 text-sm leading-5 ${mutedClass}`}>
-              Take a fresh camera photo. Gallery uploads are not allowed here.
+              Optional during signup. Capturing a fresh selfie here will mark this account verified.
             </Text>
             {avatarCameraReady ? (
               <View className={`mb-5 overflow-hidden rounded-[28px] border ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100'}`}>
@@ -1012,6 +1136,102 @@ function TermsOfServiceModal({
               </View>
             )}
           </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function AuthBypassAccountModal({
+  busy,
+  isDark,
+  mutedClass,
+  onClose,
+  onSelect,
+  panelClass,
+  profiles,
+  softClass,
+  titleClass,
+  visible,
+}: {
+  busy: boolean;
+  isDark: boolean;
+  mutedClass: string;
+  onClose: () => void;
+  onSelect: (profileId: string) => void;
+  panelClass: string;
+  profiles: Profile[];
+  softClass: string;
+  titleClass: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
+      <View className="flex-1 justify-end bg-black/80">
+        <View className={`max-h-[82%] rounded-t-[34px] border p-5 ${panelClass}`}>
+          <View className="mb-4 flex-row items-start justify-between gap-3">
+            <View className="flex-1">
+              <Text className="text-xs font-bold text-orange-400">Phone testing</Text>
+              <Text className={`text-2xl font-black ${titleClass}`}>Choose account</Text>
+            </View>
+            <Pressable
+              accessibilityLabel="Close demo account chooser"
+              accessibilityRole="button"
+              disabled={busy}
+              onPress={onClose}
+              className={`h-11 w-11 items-center justify-center rounded-full ${softClass}`}>
+              <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#18181B'} />
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {profiles.length > 0 ? (
+              <View className="gap-3 pb-2">
+                {profiles.map((item) => {
+                  const avatarSource = resolveImageSource(item.avatar_url);
+                  const details = [item.interests.slice(0, 3).join(', '), `${item.credits} ${CURRENCY_NAME}`]
+                    .filter(Boolean)
+                    .join(' | ');
+
+                  return (
+                    <Pressable
+                      key={item.id}
+                      accessibilityRole="button"
+                      disabled={busy}
+                      onPress={() => onSelect(item.id)}
+                      className={`flex-row items-center gap-3 rounded-[24px] border p-3 ${softClass} ${busy ? 'opacity-60' : ''}`}>
+                      <View className="h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-orange-500/15">
+                        {avatarSource ? (
+                          <Image source={avatarSource} style={{ height: 64, width: 64 }} contentFit="cover" />
+                        ) : (
+                          <Ionicons name="person" size={24} color="#F97316" />
+                        )}
+                      </View>
+                      <View className="flex-1">
+                        <Text className={`text-base font-black ${titleClass}`} numberOfLines={1}>
+                          {item.username}
+                        </Text>
+                        <Text className={`mt-1 text-xs font-semibold ${mutedClass}`} numberOfLines={2}>
+                          {details || item.bio}
+                        </Text>
+                      </View>
+                      {busy ? (
+                        <ActivityIndicator color="#F97316" />
+                      ) : (
+                        <Ionicons name="chevron-forward" size={20} color="#8B5CF6" />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <View className={`rounded-[24px] border p-4 ${softClass}`}>
+                <Text className={`text-center text-sm font-semibold ${mutedClass}`}>
+                  No bypass accounts are available yet.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
       </View>
     </Modal>
