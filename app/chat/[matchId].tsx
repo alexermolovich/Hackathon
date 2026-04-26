@@ -24,6 +24,7 @@ export default function ChatScreen() {
   const { profile, matches, messages, unlockChat, sendMessage, markMessagesRead, isDark } = useGigStore();
   const [draft, setDraft] = useState('');
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseReason, setPurchaseReason] = useState<string | undefined>();
 
   const match = matches.find((item) => item.id === matchId);
   const threadMessages = useMemo(
@@ -62,6 +63,9 @@ export default function ChatScreen() {
     const ok = await unlockChat(activeMatch.id);
 
     if (!ok) {
+      setPurchaseReason(
+        `You don't have enough ${CURRENCY_NAME} to unlock this chat. Unlocking this hustle costs ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME}.`,
+      );
       setPurchaseOpen(true);
     }
   }
@@ -104,7 +108,13 @@ export default function ChatScreen() {
                 {activeMatch.task.title}
               </Text>
             </View>
-            <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
+            <CreditBadge
+              credits={profile.credits}
+              onPress={() => {
+                setPurchaseReason(undefined);
+                setPurchaseOpen(true);
+              }}
+            />
           </View>
         </View>
 
@@ -168,7 +178,7 @@ export default function ChatScreen() {
         </View>
         <BstPurchaseSheet
           visible={purchaseOpen}
-          reason={`Unlocking this hustle costs ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME}.`}
+          reason={purchaseReason}
           onClose={() => setPurchaseOpen(false)}
         />
       </KeyboardAvoidingView>

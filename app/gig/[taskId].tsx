@@ -106,7 +106,7 @@ export default function GigDetailScreen() {
                 <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>{poster.username}</Text>
                 <VerifiedBadge verified={poster.is_verified} compact />
               </View>
-              <Text className={`text-sm ${mutedClass}`}>{poster.posted_vouch_count} Gigachad gigs</Text>
+              <Text className={`text-sm ${mutedClass}`}>{poster.posted_vouch_count} posted gigs</Text>
             </View>
           </View>
 
@@ -154,7 +154,7 @@ export default function GigDetailScreen() {
             </Text>
           ) : isMyPost ? (
             <Text className={`text-sm leading-5 ${mutedClass}`}>
-              You are the Gigachad for this gig. Open Create Gig for bids and picks.
+              You are the Gigachad for this gig. Open GigHub for bids and picks.
             </Text>
           ) : myMatch ? (
             <Text className={`text-sm leading-5 ${mutedClass}`}>

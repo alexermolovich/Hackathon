@@ -3,7 +3,7 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Swiper from 'react-native-deck-swiper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -27,7 +27,8 @@ import { useGigStore } from '@/lib/gig-store';
 import type { Task } from '@/lib/gig-types';
 import { APP_NAME } from '@/lib/sidehustle-config';
 
-const QUICK_BID = 'I can help with this and keep you updated the whole way.';
+const QUICK_BID = 'I can help you with this!';
+const webInputReset = { boxShadow: 'none', outlineStyle: 'none' } as const;
 
 export default function GigDeckScreen() {
   const {
@@ -57,6 +58,7 @@ export default function GigDeckScreen() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const { height, width } = useWindowDimensions();
 
   const postersById = useMemo(() => new Map(profiles.map((item) => [item.id, item])), [profiles]);
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
@@ -65,6 +67,8 @@ export default function GigDeckScreen() {
   const panelClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white';
   const deckSignature = useMemo(() => deck.map((task) => task.id).join('|'), [deck]);
   const hasVisibleCard = activeCardIndex < deck.length;
+  const compactHeader = width < 390;
+  const deckBottomPadding = Math.max(96, Math.min(128, height * 0.14));
   const emptyTitle = deck.length === 0 ? 'No gigs in range' : "You're all caught up";
   const emptyMessage =
     deck.length === 0 ? 'Adjust proximity or categories to open up the deck.' : 'Check back soon or widen your filters for more gigs.';
@@ -207,15 +211,15 @@ export default function GigDeckScreen() {
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
       <View className="flex-1">
-        <View className="px-5 pb-3 pt-2">
-          <View className="flex-row items-center justify-between gap-3">
-            <View className="min-w-0 flex-1">
+        <View className={`z-20 px-5 pb-3 pt-2 ${shellClass}`}>
+          <View className={`${compactHeader ? 'gap-3' : 'flex-row items-center justify-between gap-3'}`}>
+            <View className={`min-w-0 ${compactHeader ? '' : 'flex-1'}`}>
               <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
               <Text className={`text-3xl font-black ${titleClass}`} numberOfLines={1}>
-                Find Gigs
+                Gigs
               </Text>
             </View>
-            <View className="flex-row items-center gap-2">
+            <View className={`${compactHeader ? 'w-full justify-end' : ''} flex-row items-center gap-2`}>
               <Pressable
                 accessibilityLabel={`Open deck filters. ${profile.search_radius} mile radius, ${profile.interests.length} categories.`}
                 accessibilityRole="button"
@@ -231,7 +235,7 @@ export default function GigDeckScreen() {
           </View>
         </View>
 
-        <View className="flex-1 px-6 pb-5">
+        <View className="mt-2 flex-1 px-6" style={[styles.deckViewport, { paddingBottom: deckBottomPadding }]}>
           {hasVisibleCard ? (
             <Swiper
               key={`${deckSignature}:${swiperResetKey}`}
@@ -257,7 +261,7 @@ export default function GigDeckScreen() {
               verticalSwipe={false}
               horizontalThreshold={90}
               animateOverlayLabelsOpacity
-              containerStyle={styles.swiperContainer}
+              containerStyle={{ ...styles.swiperContainer, bottom: deckBottomPadding }}
               cardStyle={styles.swiperCard}
               overlayLabels={{
                 left: {
@@ -306,6 +310,7 @@ export default function GigDeckScreen() {
                     onChangeText={setCounterBid}
                     keyboardType="numeric"
                     className={`flex-1 py-4 text-xl font-black ${titleClass}`}
+                    style={webInputReset as never}
                   />
                 </View>
               </View>
@@ -422,6 +427,11 @@ export default function GigDeckScreen() {
 }
 
 const styles = StyleSheet.create({
+  deckViewport: {
+    overflow: 'hidden',
+    position: 'relative',
+    zIndex: 0,
+  },
   swiperContainer: {
     flex: 1,
   },

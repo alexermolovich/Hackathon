@@ -37,6 +37,7 @@ export default function MatchesScreen() {
     isDark,
   } = useGigStore();
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseReason, setPurchaseReason] = useState<string | undefined>();
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sectionTouched, setSectionTouched] = useState(false);
@@ -73,6 +74,9 @@ export default function MatchesScreen() {
     const ok = await unlockChat(matchId);
 
     if (!ok) {
+      setPurchaseReason(
+        `You don't have enough ${CURRENCY_NAME} to unlock this hustle. Unlocking a hustle costs ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME}.`,
+      );
       setPurchaseOpen(true);
     }
   }
@@ -169,7 +173,13 @@ export default function MatchesScreen() {
             <Text className={`text-3xl font-black ${titleClass}`}>Hustles</Text>
           </View>
           <View className="flex-row items-center gap-2">
-            <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
+            <CreditBadge
+              credits={profile.credits}
+              onPress={() => {
+                setPurchaseReason(undefined);
+                setPurchaseOpen(true);
+              }}
+            />
             <ProfileTrigger onPress={() => setProfileOpen(true)} />
           </View>
         </View>
@@ -243,7 +253,7 @@ export default function MatchesScreen() {
 
       <BstPurchaseSheet
         visible={purchaseOpen}
-        reason={`Unlocking a hustle costs ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME}.`}
+        reason={purchaseReason}
         onClose={() => setPurchaseOpen(false)}
       />
     </SafeAreaView>

@@ -64,6 +64,8 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
     () => (isBoosted ? getBoostCost(boostDays) : 0),
     [boostDays, isBoosted],
   );
+  const boostCharge = isBoosted ? (isEditing ? Math.max(0, boostCost - (task?.boost_cost_bsts ?? 0)) : boostCost) : 0;
+  const replacingWithSevenDayBoost = Boolean(isEditing && task?.is_boosted && isBoosted && boostDays === 7);
   const inputClass = (hasError = false) =>
     `rounded-[24px] border px-4 py-4 text-base ${
       hasError
@@ -404,6 +406,14 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
             <Text className={`mt-2 text-xs font-semibold ${mutedClass}`}>
               Posting is free. Boosting spends 50-100 {CURRENCY_NAME} depending on duration.
             </Text>
+            {replacingWithSevenDayBoost ? (
+              <View className={`mt-3 flex-row gap-2 rounded-[22px] border p-4 ${isDark ? 'border-orange-400/30 bg-orange-500/10' : 'border-orange-200 bg-orange-50'}`}>
+                <Ionicons name="information-circle" size={18} color="#F97316" />
+                <Text className={`flex-1 text-sm font-bold ${isDark ? 'text-orange-100' : 'text-orange-800'}`}>
+                  Your current boost will be replaced by this 7-day boost.
+                </Text>
+              </View>
+            ) : null}
             <View className={`mt-3 rounded-[22px] border p-4 ${softClass}`}>
               <Text className={`text-sm font-bold ${mutedClass}`}>BSTs available</Text>
               <Text className={`text-2xl font-black ${titleClass}`}>{profile.credits} {CURRENCY_NAME}</Text>
@@ -452,7 +462,7 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
 
       <BstPurchaseSheet
         visible={purchaseOpen}
-        reason={`Boosting this gig needs ${boostCost} ${CURRENCY_NAME}.`}
+        reason={`You don't have enough ${CURRENCY_NAME} for this boost. You need ${boostCharge || boostCost} ${CURRENCY_NAME} to continue.`}
         onClose={() => setPurchaseOpen(false)}
       />
     </>

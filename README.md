@@ -5,7 +5,7 @@ Hackathon PoC for a cross-platform Expo app: a swipe-first local gig marketplace
 ## What is included
 
 - Expo Router mobile app with Forge, Swipe, Hustles, Profile, onboarding, and locked Chat flows.
-- BSTs (Blood, Sweat Tokens) for signup rewards, streak rewards, boost payments, purchases, and chat unlocks.
+- BSTs (Blood, Sweat Tokens) for signup rewards, boost payments, purchases, and chat unlocks.
 - Firestore-backed profiles, public profiles, gigs, matches, and messages.
 - Repo-hosted demo image references, so demos do not require Firebase Storage.
 - A Firestore seed script for demo profiles, gigs, and optional current-user hustles.

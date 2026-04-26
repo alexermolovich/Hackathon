@@ -39,8 +39,36 @@ function readArg(name) {
 loadEnvFile('.env.local');
 loadEnvFile('.env');
 
-const now = new Date().toISOString();
+const nowDate = new Date();
+const now = nowDate.toISOString();
 const currentUserId = readArg('current-user') || process.env.DEMO_CURRENT_USER_ID || null;
+
+function daysFromNow(days) {
+  const date = new Date(nowDate);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function isoFromNow({ days = 0, hours = 0, minutes = 0 } = {}) {
+  const date = daysFromNow(days);
+  date.setHours(date.getHours() + hours);
+  date.setMinutes(date.getMinutes() + minutes);
+  return date.toISOString();
+}
+
+function formatShortDate(date) {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function dateRange(startOffset, endOffset = startOffset) {
+  const startLabel = formatShortDate(daysFromNow(startOffset));
+  const endLabel = formatShortDate(daysFromNow(endOffset));
+  return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
+}
+
+function flexibleWindow(startOffset, endOffset = startOffset) {
+  return `${dateRange(startOffset, endOffset)}, flexible`;
+}
 
 const profileDefaults = {
   search_radius: 10,
@@ -48,11 +76,9 @@ const profileDefaults = {
   is_onboarded: true,
   google_authenticated: true,
   phone_verified: true,
-  accepted_terms_at: '2026-04-01T16:00:00.000Z',
+  accepted_terms_at: isoFromNow({ days: -21 }),
   signup_bonus_awarded: true,
-  weekly_streak: 1,
-  monthly_streak: 0,
-  last_reward_claimed_at: '2026-04-24T13:00:00.000Z',
+  bidder_access_unlocked_at: null,
   updated_at: now,
 };
 
@@ -62,16 +88,15 @@ const demoProfiles = [
     data: {
       ...profileDefaults,
       username: 'Aria Stone',
-      avatar_url: 'repo://profile/aria-stone.png',
-      bio: 'Verified gig starter with same-day event and home tasks.',
+      avatar_url: 'repo://demo/avatars/aria-stone.png',
+      bio: 'Trusted Gigachad for event and home tasks around Rapid City.',
       skills: ['Events', 'Hospitality', 'Delivery'],
       interests: ['Events', 'Hospitality', 'Delivery', 'Cleaning', 'Errands'],
-      credits: 32,
+      credits: 550,
       location: { latitude: 44.0871, longitude: -103.2216 },
       phone_number: '+16055550184',
       birth_date: '1994-03-12',
       education_level: 'Bachelor degree',
-      daily_streak: 13,
       vouch_count: 17,
       posted_vouch_count: 29,
       rating: 4.84,
@@ -83,17 +108,15 @@ const demoProfiles = [
     data: {
       ...profileDefaults,
       username: 'Milo Reyes',
-      avatar_url: 'repo://profile/milo-reyes.png',
+      avatar_url: 'repo://demo/avatars/milo-reyes.png',
       bio: 'Handyman, installer, and weekend problem solver.',
       skills: ['Handywork', 'Tech Setup', 'Assembly'],
       interests: ['Handywork', 'Tech Setup', 'Assembly', 'Moving', 'Yard Work'],
-      credits: 9,
+      credits: 320,
       location: { latitude: 44.0696, longitude: -103.2458 },
       phone_number: '+16055550149',
       birth_date: '1991-11-08',
       education_level: 'Trade certification',
-      daily_streak: 21,
-      weekly_streak: 3,
       vouch_count: 41,
       posted_vouch_count: 18,
       rating: 4.96,
@@ -105,16 +128,15 @@ const demoProfiles = [
     data: {
       ...profileDefaults,
       username: 'Sage Kim',
-      avatar_url: 'repo://profile/sage-kim.png',
+      avatar_url: 'repo://demo/avatars/sage-kim.png',
       bio: 'Detail-focused cleaner and organizer.',
       skills: ['Cleaning', 'Organizing', 'Errands'],
       interests: ['Cleaning', 'Organizing', 'Errands', 'Pet Care', 'Admin'],
-      credits: 14,
+      credits: 260,
       location: { latitude: 44.1048, longitude: -103.2371 },
       phone_number: '+16055550190',
       birth_date: '1997-05-22',
       education_level: 'Some college',
-      daily_streak: 8,
       vouch_count: 36,
       posted_vouch_count: 14,
       rating: 4.88,
@@ -126,18 +148,15 @@ const demoProfiles = [
     data: {
       ...profileDefaults,
       username: 'Juno Patel',
-      avatar_url: 'repo://profile/juno-patel.png',
+      avatar_url: 'repo://demo/avatars/juno-patel.png',
       bio: 'Reliable mover with a dolly and compact SUV.',
       skills: ['Moving', 'Delivery', 'Assembly'],
       interests: ['Moving', 'Delivery', 'Assembly', 'Events', 'Auto Help'],
-      credits: 11,
+      credits: 420,
       location: { latitude: 44.052, longitude: -103.1937 },
       phone_number: '+16055550132',
       birth_date: '1996-09-01',
       education_level: 'Associate degree',
-      daily_streak: 30,
-      weekly_streak: 4,
-      monthly_streak: 1,
       vouch_count: 53,
       posted_vouch_count: 9,
       rating: 4.98,
@@ -152,7 +171,7 @@ const demoTasks = [
     data: {
       poster_id: 'profile-aria',
       title: 'Set up a pop-up booth downtown',
-      description: 'Unload two folding tables, stage product trays, and run a compact checkout stand before doors open.',
+      description: 'Unload two folding tables, stage product trays, and run a compact checkout stand before the afternoon crowd arrives.',
       budget: 92,
       category: 'Events',
       location_label: 'Downtown Rapid City',
@@ -161,10 +180,10 @@ const demoTasks = [
       image_urls: ['repo://demo/gigs/pop-up-booth.png'],
       is_boosted: true,
       boost_days: 3,
-      boost_cost_bsts: 9,
-      date_window: 'Apr 27, 8:00 AM - 10:00 AM',
+      boost_cost_bsts: 75,
+      date_window: flexibleWindow(2, 3),
       status: 'open',
-      created_at: '2026-04-24T17:00:00.000Z',
+      created_at: isoFromNow({ days: -3, hours: -2 }),
       updated_at: now,
     },
   },
@@ -181,11 +200,11 @@ const demoTasks = [
       required_skills: ['Tech Setup', 'Handywork'],
       image_urls: ['repo://demo/gigs/mesh-wifi.png'],
       is_boosted: true,
-      boost_days: 2,
-      boost_cost_bsts: 6,
-      date_window: 'Apr 26 - Apr 28',
+      boost_days: 1,
+      boost_cost_bsts: 50,
+      date_window: flexibleWindow(1, 4),
       status: 'open',
-      created_at: '2026-04-24T18:10:00.000Z',
+      created_at: isoFromNow({ days: -2, hours: -1 }),
       updated_at: now,
     },
   },
@@ -204,9 +223,9 @@ const demoTasks = [
       is_boosted: false,
       boost_days: 0,
       boost_cost_bsts: 0,
-      date_window: 'Finished Apr 23',
+      date_window: `Finished ${dateRange(-4, -3)}`,
       status: 'archived',
-      created_at: '2026-04-24T15:25:00.000Z',
+      created_at: isoFromNow({ days: -5 }),
       updated_at: now,
     },
   },
@@ -215,7 +234,7 @@ const demoTasks = [
     data: {
       poster_id: 'profile-aria',
       title: 'Pick up catering boxes',
-      description: 'Grab prepaid catering boxes and deliver to a venue lobby between 4:00 and 4:30.',
+      description: 'Grab prepaid catering boxes and deliver them to a venue lobby during the event prep window.',
       budget: 48,
       category: 'Errands',
       location_label: 'East North Street',
@@ -225,9 +244,9 @@ const demoTasks = [
       is_boosted: false,
       boost_days: 0,
       boost_cost_bsts: 0,
-      date_window: 'Apr 27, 4:00 PM - 4:30 PM',
+      date_window: flexibleWindow(2),
       status: 'open',
-      created_at: '2026-04-24T14:00:00.000Z',
+      created_at: isoFromNow({ days: -1, hours: -3 }),
       updated_at: now,
     },
   },
@@ -236,7 +255,7 @@ const demoTasks = [
     data: {
       poster_id: 'profile-milo',
       title: 'Assemble patio chairs',
-      description: 'Four boxed chairs, tools provided. Prefer someone who can finish today and take packaging to the trash room.',
+      description: 'Four boxed chairs, tools provided. Prefer someone who can finish this week and take packaging to the trash room.',
       budget: 58,
       category: 'Assembly',
       location_label: 'Robbinsdale',
@@ -246,9 +265,9 @@ const demoTasks = [
       is_boosted: false,
       boost_days: 0,
       boost_cost_bsts: 0,
-      date_window: 'Apr 25 - Apr 26',
+      date_window: dateRange(1, 5),
       status: 'open',
-      created_at: '2026-04-24T13:15:00.000Z',
+      created_at: isoFromNow({ days: -1, hours: -5 }),
       updated_at: now,
     },
   },
@@ -263,10 +282,7 @@ function publicProfile(profile) {
   delete publicData.signup_bonus_awarded;
   delete publicData.credits;
   delete publicData.location;
-  delete publicData.daily_streak;
-  delete publicData.weekly_streak;
-  delete publicData.monthly_streak;
-  delete publicData.last_reward_claimed_at;
+  delete publicData.bidder_access_unlocked_at;
   return publicData;
 }
 
@@ -279,16 +295,15 @@ function personalizedSeed() {
   const currentProfile = {
     ...profileDefaults,
     username: 'Demo Hustler',
-    avatar_url: 'repo://profile/demo-hustler.png',
+    avatar_url: 'repo://demo/avatars/demo-hustler.png',
     bio: 'Seeded collaborator account for full-flow SideHustle demos.',
     skills: ['Tech Setup', 'Cleaning', 'Organizing', 'Moving', 'Events'],
     interests: ['Tech Setup', 'Cleaning', 'Organizing', 'Moving', 'Events'],
-    credits: 40,
+    credits: 550,
     location: { latitude: 44.0805, longitude: -103.231 },
     phone_number: '+16055550100',
     birth_date: '1995-06-15',
     education_level: 'Some college',
-    daily_streak: 6,
     vouch_count: 24,
     posted_vouch_count: 8,
     rating: 4.92,
@@ -315,9 +330,9 @@ function personalizedSeed() {
         is_boosted: false,
         boost_days: 0,
         boost_cost_bsts: 0,
-        date_window: 'Apr 26, flexible',
+        date_window: flexibleWindow(1, 2),
         status: 'open',
-        created_at: '2026-04-24T12:15:00.000Z',
+        created_at: isoFromNow({ days: -1, hours: -4 }),
         updated_at: now,
       },
     },
@@ -332,11 +347,19 @@ function personalizedSeed() {
         participant_ids: ['profile-milo', currentUserId],
         bid_note: 'I can knock this out after lunch and verify speeds on each floor.',
         counter_bid: 80,
-        availability_window: 'Apr 26, 1:00 PM - 4:00 PM',
+        availability_window: flexibleWindow(1, 2),
         is_unlocked: false,
         status: 'matched',
-        created_at: '2026-04-24T19:00:00.000Z',
-        updated_at: now,
+        doer_rating_by_poster: null,
+        poster_rating_by_doer: null,
+        poster_seen_counter_at: isoFromNow({ days: -1 }),
+        doer_seen_match_at: null,
+        poster_read_messages_at: isoFromNow({ days: -1 }),
+        doer_read_messages_at: null,
+        doer_completed_at: null,
+        poster_completed_at: null,
+        created_at: isoFromNow({ days: -2, hours: 2 }),
+        updated_at: isoFromNow({ days: -1 }),
       },
     },
     {
@@ -348,11 +371,19 @@ function personalizedSeed() {
         participant_ids: [currentUserId, 'profile-juno'],
         bid_note: 'I have a dolly and can be there in 25 minutes.',
         counter_bid: 46,
-        availability_window: 'Apr 26, 11:00 AM - 1:00 PM',
+        availability_window: flexibleWindow(1, 3),
         is_unlocked: false,
         status: 'pending',
-        created_at: '2026-04-24T18:45:00.000Z',
-        updated_at: now,
+        doer_rating_by_poster: null,
+        poster_rating_by_doer: null,
+        poster_seen_counter_at: null,
+        doer_seen_match_at: null,
+        poster_read_messages_at: null,
+        doer_read_messages_at: null,
+        doer_completed_at: null,
+        poster_completed_at: null,
+        created_at: isoFromNow({ days: -1, hours: -1 }),
+        updated_at: isoFromNow({ days: -1 }),
       },
     },
     {
@@ -364,11 +395,19 @@ function personalizedSeed() {
         participant_ids: ['profile-sage', currentUserId],
         bid_note: 'I have event reset experience and can bring microfiber cloths.',
         counter_bid: 64,
-        availability_window: 'Apr 23, 6:00 PM - 8:00 PM',
+        availability_window: dateRange(-4, -3),
         is_unlocked: true,
         status: 'completed',
-        created_at: '2026-04-23T21:30:00.000Z',
-        updated_at: now,
+        doer_rating_by_poster: null,
+        poster_rating_by_doer: null,
+        poster_seen_counter_at: isoFromNow({ days: -4 }),
+        doer_seen_match_at: isoFromNow({ days: -4 }),
+        poster_read_messages_at: isoFromNow({ days: -3 }),
+        doer_read_messages_at: isoFromNow({ days: -3 }),
+        doer_completed_at: isoFromNow({ days: -3, hours: 1 }),
+        poster_completed_at: isoFromNow({ days: -3, hours: 3 }),
+        created_at: isoFromNow({ days: -5, hours: 2 }),
+        updated_at: isoFromNow({ days: -3, hours: 3 }),
       },
     },
   ];
@@ -380,8 +419,8 @@ function personalizedSeed() {
         task_id: 'task-router',
         sender_id: 'profile-milo',
         participant_ids: ['profile-milo', currentUserId],
-        content: 'Great profile. I liked you back for the Wi-Fi install.',
-        created_at: '2026-04-24T19:02:00.000Z',
+        content: 'Great profile. I accepted your counter bid for the Wi-Fi install.',
+        created_at: isoFromNow({ days: -1, hours: -1 }),
       },
     },
     {
@@ -392,7 +431,7 @@ function personalizedSeed() {
         sender_id: 'profile-sage',
         participant_ids: ['profile-sage', currentUserId],
         content: 'Thanks again. Studio was spotless.',
-        created_at: '2026-04-23T23:20:00.000Z',
+        created_at: isoFromNow({ days: -3, hours: 4 }),
       },
     },
   ];

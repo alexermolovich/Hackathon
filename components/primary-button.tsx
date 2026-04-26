@@ -7,7 +7,7 @@ type PrimaryButtonProps = {
   label: string;
   onPress: () => void;
   icon?: keyof typeof Ionicons.glyphMap;
-  tone?: 'violet' | 'emerald' | 'ghost' | 'danger';
+  tone?: 'violet' | 'orange' | 'emerald' | 'ghost' | 'danger';
   disabled?: boolean;
   visuallyDisabled?: boolean;
   style?: ViewStyle;
@@ -15,6 +15,7 @@ type PrimaryButtonProps = {
 
 const toneClasses = {
   violet: 'bg-violet',
+  orange: 'bg-orange-500',
   emerald: 'bg-emerald',
   ghost: 'border',
   danger: 'bg-rose-500',

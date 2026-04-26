@@ -11,7 +11,7 @@ export function canShowPosterRating(profile: Profile) {
 }
 
 export function canShowAnyRating(profile: Profile) {
-  return canShowDoerRating(profile) || canShowPosterRating(profile);
+  return profile.rating_count >= RATING_VISIBILITY_THRESHOLD && profile.vouch_count + profile.posted_vouch_count >= RATING_VISIBILITY_THRESHOLD;
 }
 
 export function formatVisibleRating(profile: Profile, role: 'doer' | 'poster' | 'any') {

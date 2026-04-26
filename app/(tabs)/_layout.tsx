@@ -43,14 +43,24 @@ export default function TabLayout() {
           backgroundColor: isDark ? '#050505' : '#FFFFFF',
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '700',
+          lineHeight: 12,
+        },
+        tabBarItemStyle: {
+          minWidth: 0,
+          paddingHorizontal: 2,
+        },
+        tabBarBadgeStyle: {
+          fontSize: 10,
+          height: 18,
+          minWidth: 18,
         },
       }}>
       <Tabs.Screen
         name="forge"
         options={{
-          title: 'Create Gig',
+          title: 'GigHub',
           tabBarBadge: badgeValue(forgeBadgeCount),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'hammer' : 'hammer-outline'} size={24} color={color} />

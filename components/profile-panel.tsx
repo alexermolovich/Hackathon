@@ -244,7 +244,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
           <View className="flex-row gap-2">
             <TrustPanel icon="medal" label="Hustles Completed" value={profile.vouch_count.toString()} />
             <TrustPanel icon="star" label="Avg Rating" value={formatVisibleRating(profile, 'any')} />
-            <TrustPanel icon="briefcase" label="Gigachad Gigs" value={profile.posted_vouch_count.toString()} />
+            <TrustPanel icon="briefcase" label="Posted Gigs" value={profile.posted_vouch_count.toString()} />
           </View>
         </View>
 
@@ -490,10 +490,14 @@ function TrustPanel({
   const { isDark } = useGigStore();
 
   return (
-    <View className={`flex-1 rounded-[24px] p-3 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
-      <Ionicons name={icon} size={18} color={icon === 'briefcase' ? '#F97316' : '#10B981'} />
-      <Text className={`mt-2 text-2xl font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>{value}</Text>
-      <Text className={`text-xs font-semibold leading-4 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>{label}</Text>
+    <View className={`min-h-20 flex-1 rounded-[18px] px-2.5 py-2.5 ${isDark ? 'bg-white/10' : 'bg-zinc-100'}`}>
+      <Ionicons name={icon} size={15} color={icon === 'briefcase' ? '#F97316' : '#10B981'} />
+      <Text className={`mt-1 text-xl font-black leading-6 ${isDark ? 'text-white' : 'text-zinc-950'}`} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text className={`text-[10px] font-semibold leading-3 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`} numberOfLines={2}>
+        {label}
+      </Text>
     </View>
   );
 }

@@ -137,7 +137,9 @@ export default function ForgeScreen() {
     const ok = await unlockAllBidders();
 
     if (!ok) {
-      setPurchaseReason(`Seeing all bidders costs ${SEE_MORE_BIDDERS_COST_BSTS} ${CURRENCY_NAME}.`);
+      setPurchaseReason(
+        `You don't have enough ${CURRENCY_NAME} to see all bidders. Seeing all bidders costs ${SEE_MORE_BIDDERS_COST_BSTS} ${CURRENCY_NAME}.`,
+      );
       setPurchaseOpen(true);
     }
   }
@@ -204,7 +206,7 @@ export default function ForgeScreen() {
         <View className="mb-5 flex-row items-center justify-between">
           <View>
             <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>Create Gig</Text>
+            <Text className={`text-3xl font-black ${titleClass}`}>GigHub</Text>
           </View>
           <View className="flex-row items-center gap-2">
             <CreditBadge

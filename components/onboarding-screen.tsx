@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategorySelector } from '@/components/category-selector';
@@ -17,6 +17,9 @@ import { APP_NAME, CURRENCY_NAME, EDUCATION_LEVELS, SIGNUP_BONUS_BSTS } from '@/
 type OnboardingStep = 'welcome' | 'phone' | 'identity' | 'about' | 'categories' | 'terms';
 
 const accountSteps: OnboardingStep[] = ['identity', 'about', 'categories', 'terms'];
+const homeLogoSource = require('../assets/images/favicon.png');
+const sloganOrange = '#F97316';
+const sloganViolet = '#8B5CF6';
 const monthNames = [
   'January',
   'February',
@@ -62,6 +65,38 @@ function parseDate(value: string) {
 function isValidBirthDate(value: string) {
   const date = parseDate(value);
   return Boolean(date && date <= new Date());
+}
+
+function hexToRgb(hex: string) {
+  const cleanHex = hex.replace('#', '');
+  return {
+    red: Number.parseInt(cleanHex.slice(0, 2), 16),
+    green: Number.parseInt(cleanHex.slice(2, 4), 16),
+    blue: Number.parseInt(cleanHex.slice(4, 6), 16),
+  };
+}
+
+function mixHexColor(fromHex: string, toHex: string, amount: number) {
+  const from = hexToRgb(fromHex);
+  const to = hexToRgb(toHex);
+  const red = Math.round(from.red + (to.red - from.red) * amount);
+  const green = Math.round(from.green + (to.green - from.green) * amount);
+  const blue = Math.round(from.blue + (to.blue - from.blue) * amount);
+  return `rgb(${red}, ${green}, ${blue})`;
+}
+
+function buildBrandGradient(length: number, middleColor: string) {
+  if (length <= 1) {
+    return [sloganOrange];
+  }
+
+  return Array.from({ length }, (_, index) => {
+    const progress = index / (length - 1);
+
+    return progress <= 0.5
+      ? mixHexColor(sloganOrange, middleColor, progress * 2)
+      : mixHexColor(middleColor, sloganViolet, (progress - 0.5) * 2);
+  });
 }
 
 function getInitialStep(googleAuthenticated: boolean, phoneVerified: boolean): OnboardingStep {
@@ -110,6 +145,11 @@ export function OnboardingScreen() {
   const softClass = isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-zinc-100';
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
   const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
+  const welcomeSurfaceClass = isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white';
+  const brandGradientColors = useMemo(
+    () => buildBrandGradient(APP_NAME.length, isDark ? '#FFFFFF' : '#18181B'),
+    [isDark],
+  );
   const inputClass = `rounded-[24px] border px-4 py-4 text-base ${
     isDark ? 'border-white/10 bg-white/10 text-white' : 'border-zinc-200 bg-white text-zinc-950'
   }`;
@@ -254,13 +294,13 @@ export function OnboardingScreen() {
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-3" showsVerticalScrollIndicator={false}>
-        <View className="mb-5 flex-row items-center justify-between">
-          <View>
-            <Text className="text-sm font-bold text-orange-400">{APP_NAME}</Text>
-            <Text className={`text-4xl font-black ${titleClass}`}>
-              {step === 'welcome' ? APP_NAME : 'Create Account'}
-            </Text>
-          </View>
+        <View className={`${step === 'welcome' ? 'mb-3 justify-end' : 'mb-5 justify-between'} flex-row items-center`}>
+          {step !== 'welcome' && (
+            <View>
+              <Text className="text-sm font-bold text-orange-400">{APP_NAME}</Text>
+              <Text className={`text-4xl font-black ${titleClass}`}>Create Account</Text>
+            </View>
+          )}
           <Pressable
             accessibilityRole="button"
             onPress={toggleColorMode}
@@ -272,33 +312,60 @@ export function OnboardingScreen() {
         {step !== 'welcome' && step !== 'phone' && <ProgressDots currentStep={step} isDark={isDark} />}
 
         {authLoading ? (
-          <View className={`rounded-[32px] border p-6 ${panelClass}`}>
-            <Text className={`text-2xl font-black ${titleClass}`}>Loading</Text>
+          <View className="min-h-64 items-center justify-center">
+            <ActivityIndicator size="large" color="#F97316" />
           </View>
         ) : (
           <>
             {step === 'welcome' && (
-              <StepPanel panelClass={panelClass}>
-                <View className="mb-7">
-                  <Text className={`text-5xl font-black ${titleClass}`}>{APP_NAME}</Text>
-                  <Text className={`mt-2 text-base font-semibold ${mutedClass}`}>Local work, verified people.</Text>
+              <View className="pt-2">
+                <View className={`relative mb-5 min-h-[430px] overflow-hidden rounded-[38px] border ${welcomeSurfaceClass}`}>
+                  <View className="absolute bg-violet" style={styles.welcomePurpleShape} />
+                  <View className="absolute bg-orange-500" style={styles.welcomeOrangeShape} />
+                  <View className="absolute bg-orange-400" style={styles.welcomeSlashOne} />
+                  <View className="absolute bg-violet" style={styles.welcomeSlashTwo} />
+
+                  <View className="relative z-10 flex-1 px-5 py-7">
+                    <View className="items-center">
+                      <View className="h-20 w-20 items-center justify-center overflow-hidden rounded-[24px] bg-transparent">
+                        <Image source={homeLogoSource} style={{ height: 78, width: 78 }} contentFit="contain" />
+                      </View>
+                      <View className="mt-3 flex-row justify-center">
+                        {Array.from(APP_NAME).map((character, index) => (
+                          <Text
+                            key={`${character}-${index}`}
+                            style={[styles.brandLetter, { color: brandGradientColors[index] }]}>
+                            {character}
+                          </Text>
+                        ))}
+                      </View>
+                    </View>
+
+                    <View className="flex-1 items-center justify-center pb-4">
+                      <Text className="text-center text-[42px] font-black leading-[46px] text-orange-500">Swipe.</Text>
+                      <Text className={`text-center text-[42px] font-black leading-[46px] ${titleClass}`}>Earn.</Text>
+                      <Text className="text-center text-[42px] font-black leading-[46px] text-violet">Repeat.</Text>
+                    </View>
+                  </View>
                 </View>
+
                 <View className="gap-3">
                   <PrimaryButton
                     label="Sign up with Google"
                     icon="logo-google"
+                    tone="orange"
                     onPress={() => void continueWithGoogle()}
                     disabled={busy}
                   />
                   <PrimaryButton
                     label="Log in with Google"
                     icon="log-in"
-                    tone="ghost"
+                    tone="violet"
                     onPress={() => void continueWithGoogle()}
                     disabled={busy}
                   />
                 </View>
-              </StepPanel>
+              </View>
             )}
 
             {step === 'phone' && (
@@ -681,3 +748,50 @@ function BirthDatePicker({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  brandLetter: {
+    fontSize: 48,
+    fontWeight: '900',
+    lineHeight: 52,
+  },
+  welcomeOrangeShape: {
+    borderRadius: 150,
+    bottom: -176,
+    height: 300,
+    left: -142,
+    opacity: 0.88,
+    transform: [{ rotate: '-18deg' }],
+    width: 300,
+  },
+  welcomePurpleShape: {
+    borderRadius: 170,
+    height: 340,
+    opacity: 0.86,
+    position: 'absolute',
+    right: -166,
+    top: -154,
+    transform: [{ rotate: '16deg' }],
+    width: 340,
+  },
+  welcomeSlashOne: {
+    borderRadius: 999,
+    bottom: 44,
+    height: 18,
+    left: 28,
+    opacity: 0.75,
+    position: 'absolute',
+    transform: [{ rotate: '-18deg' }],
+    width: 152,
+  },
+  welcomeSlashTwo: {
+    borderRadius: 999,
+    height: 18,
+    opacity: 0.72,
+    position: 'absolute',
+    right: 18,
+    top: 110,
+    transform: [{ rotate: '-18deg' }],
+    width: 132,
+  },
+});
