@@ -293,7 +293,7 @@ export function OnboardingScreen() {
 
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
-      <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-3" showsVerticalScrollIndicator={false}>
+      <ScrollView className="flex-1" contentContainerClassName="grow px-5 pb-10 pt-3" showsVerticalScrollIndicator={false}>
         <View className={`${step === 'welcome' ? 'mb-3 justify-end' : 'mb-5 justify-between'} flex-row items-center`}>
           {step !== 'welcome' && (
             <View>
@@ -318,8 +318,8 @@ export function OnboardingScreen() {
         ) : (
           <>
             {step === 'welcome' && (
-              <View className="pt-2">
-                <View className={`relative mb-5 min-h-[430px] overflow-hidden rounded-[38px] border ${welcomeSurfaceClass}`}>
+              <View className="flex-1 pt-1">
+                <View className={`relative flex-1 mb-5 min-h-[400px] overflow-hidden rounded-[38px] border ${welcomeSurfaceClass}`}>
                   <View className="absolute bg-violet" style={styles.welcomePurpleShape} />
                   <View className="absolute bg-orange-500" style={styles.welcomeOrangeShape} />
                   <View className="absolute bg-orange-400" style={styles.welcomeSlashOne} />
@@ -327,8 +327,8 @@ export function OnboardingScreen() {
 
                   <View className="relative z-10 flex-1">
                     <View style={styles.welcomeLogoAnchor}>
-                      <View className="h-20 w-20 items-center justify-center overflow-hidden rounded-[24px] bg-transparent">
-                        <Image source={homeLogoSource} style={{ height: 78, width: 78 }} contentFit="contain" />
+                      <View className="h-30 w-30 items-center justify-center overflow-hidden rounded-[20px] bg-transparent">
+                        <Image source={homeLogoSource} style={{ height: 150, width: 150 }} contentFit="contain" />
                       </View>
                     </View>
 
@@ -752,7 +752,7 @@ function BirthDatePicker({
 
 const styles = StyleSheet.create({
   brandLetter: {
-    fontSize: 48,
+    fontSize: 60,
     fontWeight: '900',
     lineHeight: 52,
   },
@@ -760,55 +760,54 @@ const styles = StyleSheet.create({
     left: 0,
     position: 'absolute',
     right: 0,
-    top: 158,
+    top: '50%',
+    transform: [{ translateY: -26 }], // Perfectly offsets half the height of the 52px text
   },
   welcomeLogoAnchor: {
-    left: 20,
+    left: 20, // Matched padding
     position: 'absolute',
-    top: 26,
+    top: 20,  // Matched padding
   },
   welcomeOrangeShape: {
-    borderRadius: 150,
-    bottom: -176,
-    height: 300,
-    left: -142,
+    borderRadius: 250,
+    bottom: -220,
+    height: 380,
+    left: -220,
     opacity: 0.88,
-    transform: [{ rotate: '-18deg' }],
-    width: 300,
+    width: 480,
   },
   welcomePurpleShape: {
-    borderRadius: 170,
-    height: 340,
+    borderRadius: 250,
+    height: 380,
     opacity: 0.86,
     position: 'absolute',
-    right: -166,
-    top: -154,
-    transform: [{ rotate: '16deg' }],
-    width: 340,
+    right: -220,
+    top: -220,
+    width: 480,
   },
   welcomeSlashOne: {
     borderRadius: 999,
-    bottom: 44,
-    height: 18,
-    left: 28,
+    bottom: 60,
+    height: 24,
+    left: -10,
     opacity: 0.75,
     position: 'absolute',
-    transform: [{ rotate: '-18deg' }],
-    width: 152,
+    transform: [{ rotate: '-24deg' }],
+    width: 180,
   },
   welcomeSlashTwo: {
     borderRadius: 999,
-    height: 18,
+    height: 24,
     opacity: 0.72,
     position: 'absolute',
-    right: 18,
-    top: 110,
-    transform: [{ rotate: '-18deg' }],
-    width: 132,
+    right: -10,
+    top: 60,
+    transform: [{ rotate: '-24deg' }],
+    width: 180,
   },
   welcomeSloganRight: {
     position: 'absolute',
-    right: 0,
-    top: 238,
+    right: 20,  // Matched padding
+    bottom: 20, // Matched padding
   },
 });
