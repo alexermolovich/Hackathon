@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Swiper from 'react-native-deck-swiper';
@@ -16,8 +16,8 @@ import { ProfilePanel } from '@/components/profile-panel';
 import { ProfileTrigger } from '@/components/profile-trigger';
 import { RadiusSlider } from '@/components/radius-slider';
 import { TaskCard } from '@/components/task-card';
-import type { Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
+import type { Task } from '@/lib/gig-types';
 import { APP_NAME } from '@/lib/sidehustle-config';
 
 const QUICK_BID = 'I can help with this and keep you updated the whole way.';
@@ -129,36 +129,32 @@ export default function GigDeckScreen() {
   return (
     <SafeAreaView className={`flex-1 ${shellClass}`}>
       <View className="flex-1">
-        <View className="absolute left-0 right-0 top-0 z-20 px-5 pt-2">
-          <View className="flex-row items-center justify-between">
-            <View>
+        <View className="px-5 pb-3 pt-2">
+          <View className="flex-row items-center justify-between gap-3">
+            <View className="min-w-0 flex-1">
               <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
-              <Text className={`text-3xl font-black ${titleClass}`}>Find gigs</Text>
+              <Text className={`text-3xl font-black ${titleClass}`} numberOfLines={1}>
+                Find Gigs
+              </Text>
             </View>
             <View className="flex-row items-center gap-2">
+              <Pressable
+                accessibilityLabel={`Open deck filters. ${profile.search_radius} mile radius, ${profile.interests.length} categories.`}
+                accessibilityRole="button"
+                onPress={() => setSettingsOpen(true)}
+                className={`h-11 w-11 items-center justify-center rounded-full border ${
+                  isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'
+                }`}>
+                <Ionicons name="options" size={21} color={isDark ? '#FFFFFF' : '#18181B'} />
+                <View className={`absolute right-2 top-2 h-2 w-2 rounded-full ${isLiveMode ? 'bg-emerald' : 'bg-violet'}`} />
+              </Pressable>
               <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
               <ProfileTrigger onPress={() => setProfileOpen(true)} />
             </View>
           </View>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setSettingsOpen(true)}
-            className={`mt-3 flex-row items-center justify-between rounded-[28px] border px-4 py-3 ${panelClass}`}>
-            <View className="flex-1 flex-row items-center gap-2">
-              <Ionicons name="options" size={18} color="#8B5CF6" />
-              <Text className={`font-semibold ${titleClass}`} numberOfLines={1}>
-                {profile.search_radius} mi - {profile.interests.length} categories
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-2">
-              <View className={`h-2 w-2 rounded-full ${isLiveMode ? 'bg-emerald' : 'bg-violet'}`} />
-              <Text className={`text-xs font-semibold ${mutedClass}`}>{isLiveMode ? 'Live' : 'Demo'}</Text>
-            </View>
-          </Pressable>
         </View>
 
-        <View className="flex-1">
+        <View className="flex-1 px-4 pb-4">
           {hasVisibleCard ? (
             <Swiper
               key={deckSignature}
@@ -171,7 +167,7 @@ export default function GigDeckScreen() {
 
                 const poster = postersById.get(task.poster_id) ?? profile;
 
-                return <TaskCard task={task} currentUser={profile} poster={poster} />;
+                return <TaskCard task={task} currentUser={profile} poster={poster} onPass={handlePass} onBid={handleBid} />;
               }}
               onSwipedLeft={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
               onSwipedRight={onSwipedRight}
@@ -204,7 +200,7 @@ export default function GigDeckScreen() {
               }}
             />
           ) : (
-            <View className={`m-5 flex-1 items-center justify-center rounded-[32px] border px-8 ${panelClass}`}>
+            <View className={`flex-1 items-center justify-center rounded-[32px] border px-8 ${panelClass}`}>
               <View className="mb-5 h-20 w-20 items-center justify-center rounded-full bg-violet/20">
                 <Ionicons name="briefcase" size={34} color="#C4B5FD" />
               </View>
@@ -212,29 +208,6 @@ export default function GigDeckScreen() {
               <Text className={`text-center text-base leading-6 ${mutedClass}`}>{emptyMessage}</Text>
             </View>
           )}
-        </View>
-
-        <View pointerEvents="box-none" className="absolute bottom-6 left-0 right-0 z-20 items-center">
-          <View className="flex-row items-center gap-8">
-            <Pressable
-              accessibilityRole="button"
-              disabled={!hasVisibleCard}
-              onPress={handlePass}
-              className={`h-20 w-20 items-center justify-center rounded-full border-2 ${
-                isDark ? 'border-rose-300/60 bg-black/70' : 'border-rose-400 bg-white/90'
-              } ${hasVisibleCard ? '' : 'opacity-40'}`}>
-              <Ionicons name="close" size={38} color="#F87171" />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!hasVisibleCard}
-              onPress={handleBid}
-              className={`h-20 w-20 items-center justify-center rounded-full border-2 ${
-                isDark ? 'border-emerald-300/60 bg-black/70' : 'border-emerald-400 bg-white/90'
-              } ${hasVisibleCard ? '' : 'opacity-40'}`}>
-              <Ionicons name="heart" size={36} color="#34D399" />
-            </Pressable>
-          </View>
         </View>
       </View>
 
