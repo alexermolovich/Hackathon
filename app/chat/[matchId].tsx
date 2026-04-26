@@ -15,7 +15,7 @@ import type { Profile } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
 import { getUnreadMessageCount } from '@/lib/gig-utils';
 import { resolveImageSource } from '@/lib/repo-images';
-import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
+import { APP_NAME, CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const GOOGLE_MAPS_URL_PATTERN = /(https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=[^\s]+)/;
 
@@ -69,7 +69,7 @@ export default function ChatScreen() {
   function confirmUnlock() {
     Alert.alert(
       'Unlock chat?',
-      `Spend ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME} to reveal this thread and message the gig starter?`,
+      `Spend ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME} to reveal this thread and message the Gigachad?`,
       [
         { text: 'No', style: 'cancel' },
         { text: 'Yes', onPress: () => void handleUnlock() },
@@ -95,8 +95,9 @@ export default function ChatScreen() {
             </Pressable>
             {revealParticipant ? <Avatar profile={participant} size={48} /> : <HiddenAvatar profile={participant} />}
             <View className="flex-1">
+              <Text className="text-xs font-semibold text-orange-400">{APP_NAME}</Text>
               <View className="flex-row items-center gap-2">
-                <Text className={`text-lg font-black ${titleClass}`}>{revealParticipant ? participant.username : 'Gig starter hidden'}</Text>
+                <Text className={`text-lg font-black ${titleClass}`}>{revealParticipant ? participant.username : 'Gigachad hidden'}</Text>
                 {revealParticipant && <VerifiedBadge verified={participant.is_verified} compact />}
               </View>
               <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>

@@ -11,6 +11,7 @@ import { useGigStore } from '@/lib/gig-store';
 import { formatDistance, getTaskCategoryLabels } from '@/lib/gig-utils';
 import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
+import { APP_NAME } from '@/lib/sidehustle-config';
 
 export default function GigDetailScreen() {
   const { taskId } = useLocalSearchParams<{ taskId?: string | string[] }>();
@@ -64,8 +65,8 @@ export default function GigDetailScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2">
         <View className="mb-5 flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-orange-400">{task.status === 'archived' ? 'Finished gig' : 'Gig detail'}</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>Gig</Text>
+            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
+            <Text className={`text-3xl font-black ${titleClass}`}>{task.status === 'archived' ? 'Finished Gig' : 'Gig'}</Text>
           </View>
           <Pressable
             accessibilityLabel="Close gig"
@@ -105,12 +106,12 @@ export default function GigDetailScreen() {
                 <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>{poster.username}</Text>
                 <VerifiedBadge verified={poster.is_verified} compact />
               </View>
-              <Text className={`text-sm ${mutedClass}`}>{poster.posted_vouch_count} posted gigs</Text>
+              <Text className={`text-sm ${mutedClass}`}>{poster.posted_vouch_count} Gigachad gigs</Text>
             </View>
           </View>
 
           <View className="flex-row gap-3">
-            <Metric icon="star" label="Rating" value={formatVisibleRating(poster, 'poster')} />
+            <Metric icon="star" label="Gigachad Rating" value={formatVisibleRating(poster, 'poster')} />
             <Metric icon="medal" label="Hustles Completed" value={poster.vouch_count.toString()} />
           </View>
         </View>
@@ -153,15 +154,15 @@ export default function GigDetailScreen() {
             </Text>
           ) : isMyPost ? (
             <Text className={`text-sm leading-5 ${mutedClass}`}>
-              This is one of your posted gigs. Check Forge for bids and picks.
+              You are the Gigachad for this gig. Open Create Gig for bids and picks.
             </Text>
           ) : myMatch ? (
             <Text className={`text-sm leading-5 ${mutedClass}`}>
               Your ${myMatch.counter_bid} bid is{' '}
               {myMatch.status === 'pending'
-                ? 'waiting for the gig starter'
+                ? 'waiting for the Gigachad'
                 : myMatch.doer_completed_at
-                  ? 'waiting for the gig starter to confirm completion'
+                  ? 'waiting for the Gigachad to confirm completion'
                   : 'picked'}.
             </Text>
           ) : (

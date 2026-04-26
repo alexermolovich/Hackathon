@@ -11,7 +11,6 @@ import { CreditBadge } from '@/components/credit-badge';
 import { PrimaryButton } from '@/components/primary-button';
 import { ProfilePanel } from '@/components/profile-panel';
 import { ProfileTrigger } from '@/components/profile-trigger';
-import { StarRating } from '@/components/star-rating';
 import { TaskComposer } from '@/components/task-composer';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { EnrichedMatch, Task } from '@/lib/gig-types';
@@ -20,6 +19,7 @@ import { getTaskCategoryLabels, getUnreadMessageCount, hasUnseenCounterBid } fro
 import { formatVisibleRating, visibleRatingValue } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { gigHref } from '@/lib/routes';
+import { APP_NAME } from '@/lib/sidehustle-config';
 
 type ForgeView = 'applicants' | 'posted' | 'archived';
 type SortMode = 'bid' | 'date' | 'rating' | 'experience';
@@ -37,7 +37,7 @@ const sortOptions: {
 ];
 
 export default function ForgeScreen() {
-  const { profile, tasks, matches, messages, likeBack, completeMatch, rateMatch, markCounterBidsSeen, isDark } = useGigStore();
+  const { profile, tasks, matches, messages, likeBack, completeMatch, markCounterBidsSeen, isDark } = useGigStore();
   const [composerOpen, setComposerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -67,10 +67,6 @@ export default function ForgeScreen() {
       return b.doer.vouch_count - a.doer.vouch_count;
     });
   }, [matches, profile.id, sortMode]);
-  const completedApplicantMatches = useMemo(
-    () => matches.filter((match) => match.task.poster_id === profile.id && match.status === 'completed'),
-    [matches, profile.id],
-  );
   const unseenCounterBidIds = useMemo(
     () => applicantMatches.filter((match) => hasUnseenCounterBid(match, profile.id)).map((match) => match.id),
     [applicantMatches, profile.id],
@@ -83,14 +79,6 @@ export default function ForgeScreen() {
   function pickHustler(matchId: string) {
     void likeBack(matchId);
     router.push({ pathname: '/chat/[matchId]', params: { matchId } });
-  }
-
-  async function handleRate(matchId: string, rating: number) {
-    const ok = await rateMatch(matchId, rating);
-
-    if (!ok) {
-      Alert.alert('Rating not saved', 'Only completed gigs can be rated.');
-    }
   }
 
   function confirmPick(match: EnrichedMatch) {
@@ -128,8 +116,8 @@ export default function ForgeScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2">
         <View className="mb-5 flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-orange-400">Gig starter</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>Forge</Text>
+            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
+            <Text className={`text-3xl font-black ${titleClass}`}>Create Gig</Text>
           </View>
           <View className="flex-row items-center gap-2">
             <CreditBadge credits={profile.credits} onPress={() => setPurchaseOpen(true)} />
@@ -148,7 +136,7 @@ export default function ForgeScreen() {
         </View>
 
         <View className={`mb-5 flex-row rounded-[26px] border p-1 ${isDark ? 'border-white/10 bg-white/10' : 'border-zinc-200 bg-white'}`}>
-          <ViewButton title="Hustlers" count={applicantMatches.length + completedApplicantMatches.length} active={activeView === 'applicants'} onPress={() => setActiveView('applicants')} />
+          <ViewButton title="Hustlers" count={applicantMatches.length} active={activeView === 'applicants'} onPress={() => setActiveView('applicants')} />
           <ViewButton title="Posted" count={openTasks.length} active={activeView === 'posted'} onPress={() => setActiveView('posted')} />
           <ViewButton title="Archived" count={archivedTasks.length} active={activeView === 'archived'} onPress={() => setActiveView('archived')} />
         </View>
@@ -157,7 +145,7 @@ export default function ForgeScreen() {
           <View>
             <SortControl active={sortMode} onChange={setSortMode} />
 
-            {applicantMatches.length === 0 && completedApplicantMatches.length === 0 ? (
+            {applicantMatches.length === 0 ? (
               <EmptyState copy="Counter bids from hustlers land here after they swipe right on your gigs." />
             ) : (
               applicantMatches.map((match) => (
@@ -171,19 +159,6 @@ export default function ForgeScreen() {
                 />
               ))
             )}
-
-            {completedApplicantMatches.length > 0 ? (
-              <View className="mt-2">
-                <SectionLabel title="Completed hustlers" count={completedApplicantMatches.length} />
-                {completedApplicantMatches.map((match) => (
-                  <CompletedApplicantCard
-                    key={match.id}
-                    match={match}
-                    onRate={(rating) => void handleRate(match.id, rating)}
-                  />
-                ))}
-              </View>
-            ) : null}
           </View>
         )}
 
@@ -377,7 +352,7 @@ function ApplicantCard({
     </View>
   );
 
-  if (match.status === 'matched') {
+  if (match.status === 'matched' && !completionRequested) {
     return (
       <Link href={{ pathname: '/chat/[matchId]', params: { matchId: match.id } }} asChild>
         <Pressable accessibilityRole="button">{content}</Pressable>
@@ -386,50 +361,6 @@ function ApplicantCard({
   }
 
   return content;
-}
-
-function CompletedApplicantCard({ match, onRate }: { match: EnrichedMatch; onRate: (rating: number) => void }) {
-  const { isDark } = useGigStore();
-  const titleClass = isDark ? 'text-white' : 'text-zinc-950';
-  const mutedClass = isDark ? 'text-zinc-400' : 'text-zinc-600';
-
-  return (
-    <View className={`mb-4 rounded-[30px] border p-5 ${isDark ? 'border-emerald-400/20 bg-emerald-500/10' : 'border-emerald-200 bg-emerald-50'}`}>
-      <View className="mb-4 flex-row items-center gap-3">
-        <Avatar profile={match.doer} size={58} />
-        <View className="flex-1">
-          <View className="mb-1 flex-row items-center gap-2">
-            <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>{match.doer.username}</Text>
-            <VerifiedBadge verified={match.doer.is_verified} compact />
-          </View>
-          <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>Finished: {match.task.title}</Text>
-        </View>
-        <Ionicons name="checkmark-circle" size={22} color="#10B981" />
-      </View>
-
-      <View className="mb-4 flex-row gap-3">
-        <Metric icon="cash" label="Paid" value={`$${match.counter_bid}`} />
-        <Metric icon="medal" label="Completed" value={match.doer.vouch_count.toString()} />
-      </View>
-
-      <StarRating
-        label={match.doer_rating_by_poster ? `You rated ${match.doer.username} ${match.doer_rating_by_poster}/5` : 'Rate hustler'}
-        value={match.doer_rating_by_poster}
-        onRate={onRate}
-      />
-    </View>
-  );
-}
-
-function SectionLabel({ title, count }: { title: string; count: number }) {
-  const { isDark } = useGigStore();
-
-  return (
-    <View className="mb-3 mt-2 flex-row items-center justify-between">
-      <Text className={`text-lg font-black ${isDark ? 'text-white' : 'text-zinc-950'}`}>{title}</Text>
-      <Text className={`rounded-full px-3 py-1 text-xs font-bold ${isDark ? 'bg-white/10 text-zinc-300' : 'bg-white text-zinc-700'}`}>{count}</Text>
-    </View>
-  );
 }
 
 function NotificationBadge({ label }: { label: string }) {

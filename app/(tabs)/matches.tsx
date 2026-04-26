@@ -19,7 +19,7 @@ import { useGigStore } from '@/lib/gig-store';
 import { getTaskCategoryLabels, getUnreadMessageCount, hasUnseenAcceptedOffer } from '@/lib/gig-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 import { gigHref } from '@/lib/routes';
-import { CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
+import { APP_NAME, CHAT_UNLOCK_COST_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 export default function MatchesScreen() {
   const {
@@ -57,7 +57,7 @@ export default function MatchesScreen() {
   function confirmUnlock(match: EnrichedMatch) {
     Alert.alert(
       'Unlock this hustle?',
-      `Spend ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME} to reveal the gig starter and open chat for "${match.task.title}"?`,
+      `Spend ${CHAT_UNLOCK_COST_BSTS} ${CURRENCY_NAME} to reveal the Gigachad and open chat for "${match.task.title}"?`,
       [
         { text: 'No', style: 'cancel' },
         { text: 'Yes', onPress: () => void handleUnlock(match.id) },
@@ -76,7 +76,7 @@ export default function MatchesScreen() {
   function confirmCompletionRequest(match: EnrichedMatch) {
     Alert.alert(
       'Mark this hustle complete?',
-      `This asks ${match.poster.username || 'the gig starter'} to confirm before it becomes completed.`,
+      `This asks ${match.poster.username || 'the Gigachad'} to confirm before it becomes completed.`,
       [
         { text: 'No', style: 'cancel' },
         { text: 'Yes', onPress: () => void requestMatchCompletion(match.id) },
@@ -97,7 +97,7 @@ export default function MatchesScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2">
         <View className="mb-6 flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-orange-400">Picked by gig starters</Text>
+            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
             <Text className={`text-3xl font-black ${titleClass}`}>Hustles</Text>
           </View>
           <View className="flex-row items-center gap-2">
@@ -108,7 +108,7 @@ export default function MatchesScreen() {
 
         <SectionHeader title="Ready to unlock" count={readyHustles.length} icon="lock-open" />
         {readyHustles.length === 0 ? (
-          <EmptyState copy="When a gig starter picks your counter bid, the hustle lands here." />
+          <EmptyState copy="When a Gigachad picks your counter bid, the hustle lands here." />
         ) : (
           readyHustles.map((match) => (
             <HustleCard
@@ -124,7 +124,7 @@ export default function MatchesScreen() {
 
         <SectionHeader title="Pending bids" count={pendingBids.length} icon="time" />
         {pendingBids.length === 0 ? (
-          <EmptyState copy="Your right-swipe bids wait here until the gig starter picks you." />
+          <EmptyState copy="Your right-swipe bids wait here until the Gigachad picks you." />
         ) : (
           pendingBids.map((match) => <PendingBid key={match.id} match={match} />)
         )}
@@ -198,7 +198,7 @@ function HustleCard({
         <View className="flex-1">
           <View className="flex-row items-center gap-2">
             <Text className={`text-lg font-black ${titleClass}`} numberOfLines={1}>
-              {reveal ? match.poster.username : 'Gig starter hidden'}
+              {reveal ? match.poster.username : 'Gigachad hidden'}
             </Text>
             {reveal && <VerifiedBadge verified={match.poster.is_verified} compact />}
           </View>
@@ -283,14 +283,14 @@ function CompletedHustleCard({ match, onRate }: { match: EnrichedMatch; onRate: 
             {match.task.title}
           </Text>
           <Text className={`text-sm ${mutedClass}`} numberOfLines={1}>
-            {reveal ? `Completed for ${match.poster.username}` : 'Hustle completed'}
+            {reveal ? `Completed for Gigachad ${match.poster.username}` : 'Hustle completed'}
           </Text>
         </View>
         <Ionicons name="checkmark-circle" size={24} color="#34D399" />
       </View>
 
       <StarRating
-        label={match.poster_rating_by_doer ? `You rated the gig starter ${match.poster_rating_by_doer}/5` : 'Rate gig starter'}
+        label={match.poster_rating_by_doer ? `You rated the Gigachad ${match.poster_rating_by_doer}/5` : 'Rate Gigachad'}
         value={match.poster_rating_by_doer}
         onRate={onRate}
       />

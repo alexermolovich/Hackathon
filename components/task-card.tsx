@@ -7,20 +7,19 @@ import { Avatar } from '@/components/avatar';
 import { VerifiedBadge } from '@/components/verified-badge';
 import type { Profile, Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
-import { formatDistance, getTaskCategoryLabels } from '@/lib/gig-utils';
+import { getTaskCategoryLabels } from '@/lib/gig-utils';
 import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
 
 type TaskCardProps = {
   task: Task;
-  currentUser: Profile;
   poster: Profile;
   revealPoster?: boolean;
   onPass?: () => void;
   onBid?: () => void;
 };
 
-export function TaskCard({ task, currentUser, poster, revealPoster = false, onPass, onBid }: TaskCardProps) {
+export function TaskCard({ task, poster, revealPoster = false, onPass, onBid }: TaskCardProps) {
   const { isDark } = useGigStore();
   const { height } = useWindowDimensions();
   const titleClass = isDark ? 'text-white' : 'text-zinc-950';
@@ -54,9 +53,8 @@ export function TaskCard({ task, currentUser, poster, revealPoster = false, onPa
 
         <View className="px-5 pt-4">
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pr-2">
-            <InfoChip icon="navigate-circle" label={formatDistance(currentUser.location, task.location)} color="#8B5CF6" isDark={isDark} />
             <InfoChip icon="location" label={task.location_label} color="#10B981" isDark={isDark} />
-            <InfoChip icon="cash" label={`$${task.budget} bid`} color="#F97316" isDark={isDark} />
+            <InfoChip icon="cash" label={`Gig pays $${task.budget}`} color="#F97316" isDark={isDark} />
           </ScrollView>
 
           <Text className={`mt-4 text-3xl font-black leading-tight ${titleClass}`}>
@@ -72,12 +70,12 @@ export function TaskCard({ task, currentUser, poster, revealPoster = false, onPa
               <View className="min-w-0 flex-1">
                 <View className="flex-row items-center gap-2">
                   <Text className={`text-base font-black ${titleClass}`} numberOfLines={1}>
-                    {revealPoster ? poster.username : 'Poster hidden'}
+                    {revealPoster ? poster.username : 'Gigachad hidden'}
                   </Text>
                   {revealPoster && <VerifiedBadge verified={poster.is_verified} compact />}
                 </View>
                 <Text className={`text-xs font-semibold ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`} numberOfLines={1}>
-                  Requester profile
+                  Gigachad profile
                 </Text>
               </View>
             </View>
@@ -100,7 +98,7 @@ export function TaskCard({ task, currentUser, poster, revealPoster = false, onPa
           <View className="mt-1">
             <DetailRow icon="calendar" label="Date wanted" value={task.date_window || 'Flexible'} isDark={isDark} />
             <DetailRow icon="pricetag" label="Categories" value={categoriesText} isDark={isDark} />
-            <DetailRow icon="star" label="Requester rating" value={formatVisibleRating(poster, 'poster')} isDark={isDark} />
+            <DetailRow icon="star" label="Gigachad rating" value={formatVisibleRating(poster, 'poster')} isDark={isDark} />
             <DetailRow icon="time" label="Posted" value={formatPostedAt(task.created_at)} isDark={isDark} />
             {task.required_skills.length > 0 ? (
               <DetailRow icon="construct" label="Helpful skills" value={task.required_skills.join(', ')} isDark={isDark} />

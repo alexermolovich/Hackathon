@@ -155,7 +155,7 @@ export default function GigDeckScreen() {
     });
     setSelectedTask(null);
     setSelectedTaskIndex(null);
-    Alert.alert('Bid sent', 'If the gig starter picks you, it will appear in Hustles.');
+    Alert.alert('Bid sent', 'If the Gigachad picks you, it will appear in Hustles.');
   }
 
   function selectAvailabilityDate(day: Date) {
@@ -243,14 +243,14 @@ export default function GigDeckScreen() {
 
                 const poster = postersById.get(task.poster_id) ?? profile;
 
-                return <TaskCard task={task} currentUser={profile} poster={poster} onPass={handlePass} onBid={handleBid} />;
+                return <TaskCard task={task} poster={poster} onPass={handlePass} onBid={handleBid} />;
               }}
               onSwipedLeft={onSwipedLeft}
               onSwipedRight={onSwipedRight}
               onSwiped={(cardIndex) => setActiveCardIndex(cardIndex + 1)}
               cardIndex={activeCardIndex}
               backgroundColor="transparent"
-              stackSize={3}
+              stackSize={2}
               stackScale={7}
               stackSeparation={14}
               verticalSwipe={false}
@@ -292,7 +292,7 @@ export default function GigDeckScreen() {
           <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View className={`max-h-[92%] rounded-t-[34px] border ${isDark ? 'border-white/10 bg-zinc-950' : 'border-zinc-200 bg-white'}`}>
             <ScrollView contentContainerClassName="p-6" showsVerticalScrollIndicator={false}>
-            <Text className="mb-2 text-sm font-bold text-orange-400">Counter bid</Text>
+            <Text className="mb-2 text-sm font-bold text-orange-400">{APP_NAME}</Text>
             <Text className={`mb-1 text-3xl font-black ${titleClass}`}>{selectedTask?.title}</Text>
             <Text className={`mb-5 text-sm ${mutedClass}`}>{selectedTask?.location_label}</Text>
             <View className="mb-5 gap-3">
@@ -338,7 +338,7 @@ export default function GigDeckScreen() {
               multiline
               value={bidNote}
               onChangeText={setBidNote}
-              placeholder="Tell the gig starter why you are a strong fit."
+              placeholder="Tell the Gigachad why you are a strong fit."
               placeholderTextColor="#71717A"
               className={`mb-5 min-h-28 rounded-[24px] border p-4 text-base leading-6 ${
                 isDark ? 'border-white/10 bg-white/10 text-white' : 'border-zinc-200 bg-zinc-100 text-zinc-950'
@@ -366,7 +366,7 @@ export default function GigDeckScreen() {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-8">
               <View className="mb-5 flex-row items-center justify-between">
                 <View>
-                  <Text className="text-sm font-bold text-orange-400">Deck settings</Text>
+                  <Text className="text-sm font-bold text-orange-400">{APP_NAME}</Text>
                   <Text className={`text-3xl font-black ${titleClass}`}>Tune gigs</Text>
                 </View>
                 <Pressable

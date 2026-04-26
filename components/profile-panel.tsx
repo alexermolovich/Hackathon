@@ -14,7 +14,7 @@ import { calculateAge, initials } from '@/lib/gig-utils';
 import { createPersistentProfileImageRef, PROFILE_IMAGE_PICKER_OPTIONS } from '@/lib/profile-images';
 import { formatVisibleRating } from '@/lib/rating-utils';
 import { resolveImageSource } from '@/lib/repo-images';
-import { CURRENCY_NAME } from '@/lib/sidehustle-config';
+import { APP_NAME, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -159,7 +159,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
     <View className="flex-1">
       <View className={`z-10 flex-row items-center justify-between border-b px-5 pb-4 pt-5 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
         <View>
-          <Text className="text-sm font-semibold text-orange-400">Account hub</Text>
+          <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
           <Text className={`text-3xl font-black ${titleClass}`}>Profile</Text>
         </View>
         <View className="flex-row items-center gap-2">
@@ -250,7 +250,7 @@ export function ProfilePanel({ onClose }: ProfilePanelProps) {
           <View className="flex-row gap-2">
             <TrustPanel icon="medal" label="Hustles Completed" value={profile.vouch_count.toString()} />
             <TrustPanel icon="star" label="Avg Rating" value={formatVisibleRating(profile, 'any')} />
-            <TrustPanel icon="briefcase" label="Posted Gigs" value={profile.posted_vouch_count.toString()} />
+            <TrustPanel icon="briefcase" label="Gigachad Gigs" value={profile.posted_vouch_count.toString()} />
           </View>
         </View>
 

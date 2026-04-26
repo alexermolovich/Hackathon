@@ -21,7 +21,7 @@ import type { Task } from '@/lib/gig-types';
 import { useGigStore } from '@/lib/gig-store';
 import { approximateLocationLabel } from '@/lib/geo';
 import { resolveImageSource } from '@/lib/repo-images';
-import { BOOST_COST_PER_DAY_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
+import { APP_NAME, BOOST_COST_PER_DAY_BSTS, CURRENCY_NAME } from '@/lib/sidehustle-config';
 
 const boostDurations = [1, 3, 7];
 const webInputReset = { boxShadow: 'none', outlineStyle: 'none' } as const;
@@ -247,8 +247,8 @@ export function TaskComposer({ onClose, onCreated, onSaved, task }: TaskComposer
       <View className={`z-10 border-b pb-4 ${isDark ? 'border-white/10 bg-black' : 'border-zinc-200 bg-zinc-100'}`}>
         <View className="flex-row items-center justify-between">
           <View>
-            <Text className="text-sm font-semibold text-orange-400">Gig starter mode</Text>
-            <Text className={`text-3xl font-black ${titleClass}`}>{isEditing ? 'Edit gig' : 'Post a gig'}</Text>
+            <Text className="text-sm font-semibold text-orange-400">{APP_NAME}</Text>
+            <Text className={`text-3xl font-black ${titleClass}`}>{isEditing ? 'Edit gig' : 'Create gig'}</Text>
           </View>
           {onClose ? (
             <Pressable

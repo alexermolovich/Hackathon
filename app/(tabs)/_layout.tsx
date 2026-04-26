@@ -50,7 +50,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="forge"
         options={{
-          title: 'Forge',
+          title: 'Create Gig',
           tabBarBadge: badgeValue(forgeBadgeCount),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'hammer' : 'hammer-outline'} size={24} color={color} />
